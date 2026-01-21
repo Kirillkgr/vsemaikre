@@ -10,7 +10,8 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // важно: используем BASE_URL от Vite, чтобы роутинг корректно работал на GitHub Pages
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
 })
 
