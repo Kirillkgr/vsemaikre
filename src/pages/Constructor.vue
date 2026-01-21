@@ -23,6 +23,14 @@ const printOutlineRef = ref(null)
 const userImageNode = ref(null)
 const maskImageNode = ref(null)
 const overlayImageNode = ref(null)
+// Text state
+const textNodeRef = ref(null)
+const textValue = ref('')
+const textColor = ref('#ff0000')
+const textFontSize = ref(36)
+const textFontFamily = ref('Arial, sans-serif')
+const textOpacity = ref(1)
+const textInitialized = ref(false)
 let clipGroup = null
 
 const userImageObj = new window.Image()
@@ -105,6 +113,13 @@ function applyFilters() {
 
 function persistState() {
   if (!userImageNode.value) return
+  // берем предыдущие значения, чтобы не затирать координаты текста, если нода ещё не готова
+  let prev = {}
+  try {
+    const raw = localStorage.getItem('constructorState')
+    prev = raw ? JSON.parse(raw) || {} : {}
+  } catch (e) { prev = {} }
+  const prevText = prev.text || {}
   const state = {
     x: userImageNode.value.x(),
     y: userImageNode.value.y(),
@@ -112,6 +127,18 @@ function persistState() {
     scaleX: userImageNode.value.scaleX(),
     scaleY: userImageNode.value.scaleY(),
     rotation: userImageNode.value.rotation?.() ?? 0,
+    text: {
+      value: textValue.value,
+      color: textColor.value,
+      fontSize: textFontSize.value,
+      fontFamily: textFontFamily.value,
+      opacity: textOpacity.value,
+      x: (textNodeRef.value?.x?.() ?? prevText.x ?? null),
+      y: (textNodeRef.value?.y?.() ?? prevText.y ?? null),
+      scaleX: (textNodeRef.value?.scaleX?.() ?? prevText.scaleX ?? 1),
+      scaleY: (textNodeRef.value?.scaleY?.() ?? prevText.scaleY ?? 1),
+      rotation: (textNodeRef.value?.rotation?.() ?? prevText.rotation ?? 0),
+    },
     useGrayscale: useGrayscale.value,
     useSepia: useSepia.value,
     brightness: brightness.value,
@@ -140,6 +167,13 @@ function restoreState() {
   userImageNode.value.scale({ x: sx, y: sy })
   if (typeof savedState.rotation === 'number') {
     userImageNode.value.rotation(savedState.rotation)
+  }
+  if (savedState.text) {
+    textValue.value = String(savedState.text.value || '')
+    textColor.value = savedState.text.color || '#ff0000'
+    textFontSize.value = Number(savedState.text.fontSize || 36)
+    textFontFamily.value = savedState.text.fontFamily || 'Arial, sans-serif'
+    textOpacity.value = Number(savedState.text.opacity ?? 1)
   }
   useGrayscale.value = !!savedState.useGrayscale
   useSepia.value = !!savedState.useSepia
@@ -234,6 +268,31 @@ function setupKonva() {
   clipGroup = new Konva.Group({ clip: { x: PRINT_X, y: PRINT_Y, width: PRINT_SIZE, height: PRINT_SIZE } })
   clipGroup.listening(true)
   clipGroup.add(userImg)
+  // Text node (draggable, transformable)
+  const textNode = new Konva.Text({
+    x: PRINT_X + 10,
+    y: PRINT_Y + 10,
+    text: '',
+    fontSize: textFontSize.value,
+    fontFamily: textFontFamily.value,
+    fill: textColor.value,
+    opacity: textOpacity.value,
+    draggable: true,
+    listening: true,
+    visible: false,
+  })
+  // сделать выбор текста надёжным и сразу показывать трансформер
+  const selectText = () => { transformer?.nodes([textNode]); layerMasked.batchDraw() }
+  textNode.on('mousedown', selectText)
+  textNode.on('click', selectText)
+  textNode.on('tap', selectText)
+  // не меняем прозрачность во время перетаскивания, чтобы не было визуальных "миганий"
+  textNode.on('dragstart', () => { selectText(); layerMasked.batchDraw() })
+  textNode.on('dragend', () => { onDragEnd(); persistState(); layerMasked.batchDraw() })
+  textNode.on('transformstart', selectText)
+  textNode.on('transformend', () => { persistState(); layerMasked.batchDraw() })
+  textNodeRef.value = textNode
+  clipGroup.add(textNode)
   // Маска: используем альфу maika.png, добавляем в ТОТ ЖЕ clipGroup ПОСЛЕ userImg, чтобы применился destination-in к содержимому группы
   const maskImg = new Konva.Image({ x: 0, y: 0, width: STAGE_SIZE, height: STAGE_SIZE, listening: false })
   maskImg.globalCompositeOperation('destination-in')
@@ -300,6 +359,30 @@ function setupKonva() {
     applyFilters()
     transformer.nodes([userImg])
     layerMasked.batchDraw()
+  }
+
+  // apply saved text properties after layers exist
+  if (savedState?.text && textNodeRef.value) {
+    const t = savedState.text
+    textNodeRef.value.text(String(t.value || ''))
+    textNodeRef.value.fill(t.color || '#ff0000')
+    textNodeRef.value.fontSize(Number(t.fontSize || 36))
+    textNodeRef.value.fontFamily(t.fontFamily || 'Arial, sans-serif')
+    textNodeRef.value.opacity(Number(t.opacity ?? 1))
+    textNodeRef.value.visible(!!t.value)
+    textNodeRef.value.scale({ x: Number(t.scaleX || 1), y: Number(t.scaleY || 1) })
+    if (typeof t.rotation === 'number') textNodeRef.value.rotation(t.rotation)
+    // если координаты сохранены — применяем; иначе один раз центрируем
+    if (typeof t.x === 'number' && typeof t.y === 'number') {
+      textNodeRef.value.position({ x: t.x, y: t.y })
+      textInitialized.value = true
+    } else if (t.value) {
+      const rect = textNodeRef.value.getClientRect()
+      const tW = rect.width
+      const tH = rect.height
+      textNodeRef.value.position({ x: PRINT_X + (PRINT_SIZE - tW) / 2, y: PRINT_Y + (PRINT_SIZE - tH) / 2 })
+      textInitialized.value = true
+    }
   }
 
   // Маску временно не используем, оставляем только оверлей
@@ -372,6 +455,8 @@ function setupKonva() {
       // if clicked on user image, select it
       if (e.target === userImg) {
         transformer.nodes([userImg])
+      } else if (textNodeRef.value && e.target === textNodeRef.value) {
+        transformer.nodes([textNodeRef.value])
       }
     }
     layerMasked.batchDraw()
@@ -458,6 +543,26 @@ function setupKonva() {
       }
       transformer?.forceUpdate()
     }
+    // scale text proportionally and keep within print area (без пере-центрирования)
+    if (textNodeRef.value) {
+      const k2 = STAGE_SIZE / prevSize
+      const sx2 = textNodeRef.value.scaleX() * k2
+      const sy2 = textNodeRef.value.scaleY() * k2
+      textNodeRef.value.scale({ x: sx2, y: sy2 })
+      let nx = textNodeRef.value.x() * k2
+      let ny = textNodeRef.value.y() * k2
+      const rect = textNodeRef.value.getClientRect()
+      const tW = rect.width
+      const tH = rect.height
+      // мягко ограничиваем в пределах области печати, без перескока к центру
+      const minX = PRINT_X
+      const minY = PRINT_Y
+      const maxX = PRINT_X + PRINT_SIZE - tW
+      const maxY = PRINT_Y + PRINT_SIZE - tH
+      nx = Math.min(Math.max(nx, minX), Math.max(minX, maxX))
+      ny = Math.min(Math.max(ny, minY), Math.max(minY, maxY))
+      textNodeRef.value.position({ x: nx, y: ny })
+    }
     stage.batchDraw()
   }
   // пересчитываем при изменении окна
@@ -492,6 +597,30 @@ onMounted(() => {
 })
 
 watch([useGrayscale, useSepia, brightness, contrast, saturation, hue, blur, pixelSize, noise, posterize, invert, threshold, solarize], applyFilters)
+// text property watchers
+watch(textValue, (v, oldV) => {
+  if (textNodeRef.value) {
+    textNodeRef.value.text(String(v || ''))
+    const becameVisible = !!v && !oldV
+    textNodeRef.value.visible(!!v)
+    // Если текст только появился — центрируем в зоне печати и выделяем трансформером
+    if (becameVisible && !textInitialized.value) {
+      // центрируем по фактическим габаритам с учётом метрик
+      const rect = textNodeRef.value.getClientRect()
+      const tW = rect.width
+      const tH = rect.height
+      textNodeRef.value.position({ x: PRINT_X + (PRINT_SIZE - tW) / 2, y: PRINT_Y + (PRINT_SIZE - tH) / 2 })
+      transformer?.nodes([textNodeRef.value])
+      textInitialized.value = true
+    }
+    textNodeRef.value.getLayer()?.batchDraw()
+    persistState()
+  }
+})
+watch(textColor, (v) => { if (textNodeRef.value) { textNodeRef.value.fill(v || '#000'); textNodeRef.value.getLayer()?.batchDraw(); persistState() } })
+watch(textFontSize, (v) => { if (textNodeRef.value) { textNodeRef.value.fontSize(Number(v||36)); textNodeRef.value.getLayer()?.batchDraw(); persistState() } })
+watch(textFontFamily, (v) => { if (textNodeRef.value) { textNodeRef.value.fontFamily(v || 'Arial, sans-serif'); textNodeRef.value.getLayer()?.batchDraw(); persistState() } })
+watch(textOpacity, (v) => { if (textNodeRef.value) { textNodeRef.value.opacity(Math.max(0, Math.min(1, Number(v)||1))); textNodeRef.value.getLayer()?.batchDraw(); persistState() } })
 watch(userOpacity, (v) => {
   if (userImageNode.value) {
     userImageNode.value.opacity(Math.max(0, Math.min(1, v)))
@@ -619,6 +748,19 @@ function onCancel() {
         <label><input type="checkbox" v-model="solarize" /> Solarize</label>
         <label class="range">Порог <input type="range" min="0" max="0.4" step="0.01" v-model.number="threshold" /></label>
       </div>
+      <div class="text-tools">
+        <div class="row">
+          <label>Текст</label>
+          <input class="text-input" type="text" placeholder="Введите текст" v-model="textValue" />
+        </div>
+        <div class="row">
+          <label>Цвет</label>
+          <input type="color" v-model="textColor" />
+        </div>
+        <label class="range">Размер текста <input type="range" min="10" max="160" step="1" v-model.number="textFontSize" /></label>
+        <label class="range">Прозрачность текста <input type="range" min="0" max="1" step="0.01" v-model.number="textOpacity" /></label>
+        <button @click="() => { textValue = ''; }">Очистить текст</button>
+      </div>
     </aside>
     <section class="work">
       <div class="stage-wrap">
@@ -645,6 +787,9 @@ function onCancel() {
 .presets { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .presets > span { color: #111; font-weight: 600; }
 .filters { display: grid; grid-template-columns: 1fr; gap: 8px; background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #e3e6ea; color: #111; }
+.text-tools { display: grid; grid-template-columns: 1fr; gap: 8px; background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #e3e6ea; color: #111; margin-top: 8px; }
+.text-tools .row { display: flex; align-items: center; gap: 8px; }
+.text-tools .text-input { flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
 .work { display: flex; align-items: flex-start; justify-content: center; height: auto; min-height: 0; }
 .stage-wrap { width: 100%; display: flex; justify-content: center; align-items: center; padding: 8px; padding-bottom: 16px; box-sizing: border-box; }
 .stage { border: 1px solid #e3e6ea; border-radius: 14px; background: #f7f8fa; box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
