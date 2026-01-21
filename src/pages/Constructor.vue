@@ -18,6 +18,7 @@ const layerMaskedRef = ref(null)
 const layerOverlayRef = ref(null)
 const layerBackgroundRef = ref(null)
 let transformer = null
+const printOutlineRef = ref(null)
 
 const userImageNode = ref(null)
 const maskImageNode = ref(null)
@@ -103,7 +104,10 @@ function persistState() {
   const state = {
     x: userImageNode.value.x(),
     y: userImageNode.value.y(),
-    scale: userImageNode.value.scaleX(),
+    // сохраняем независимые масштабы по осям, чтобы не терять «растягивание/сжатие»
+    scaleX: userImageNode.value.scaleX(),
+    scaleY: userImageNode.value.scaleY(),
+    rotation: userImageNode.value.rotation?.() ?? 0,
     useGrayscale: useGrayscale.value,
     useSepia: useSepia.value,
     brightness: brightness.value,
@@ -126,8 +130,13 @@ function persistState() {
 function restoreState() {
   if (!savedState || !userImageNode.value) return
   userImageNode.value.position({ x: savedState.x ?? STAGE_SIZE/2, y: savedState.y ?? STAGE_SIZE/2 })
-  const s = savedState.scale ?? 1
-  userImageNode.value.scale({ x: s, y: s })
+  // поддерживаем старый формат (scale) и новый (scaleX/scaleY)
+  const sx = (typeof savedState.scaleX === 'number') ? savedState.scaleX : (savedState.scale ?? 1)
+  const sy = (typeof savedState.scaleY === 'number') ? savedState.scaleY : (savedState.scale ?? 1)
+  userImageNode.value.scale({ x: sx, y: sy })
+  if (typeof savedState.rotation === 'number') {
+    userImageNode.value.rotation(savedState.rotation)
+  }
   useGrayscale.value = !!savedState.useGrayscale
   useSepia.value = !!savedState.useSepia
   brightness.value = Number(savedState.brightness || 0)
@@ -254,6 +263,7 @@ function setupKonva() {
   overlayImageNode.value = overlayImg
   // Visual print area outline (for clarity)
   const printOutline = new Konva.Rect({ x: PRINT_X, y: PRINT_Y, width: PRINT_SIZE, height: PRINT_SIZE, stroke: '#3b82f6', dash: [6, 4], listening: false, shadowForStrokeEnabled: false })
+  printOutlineRef.value = printOutline
 
   // порядок: фон майки -> пользовательское изображение + маска -> оверлей майки
   stage.add(layerBackground)
@@ -415,21 +425,28 @@ function setupKonva() {
     // rebuild background and mask at new resolution for crisper edges
     setBackground(maikaUrl)
     setMaskFromPngAlpha(maikaUrl)
-    // scale and reposition current user image proportionally; then ensure it's centered if controls go out of bounds
+    // scale and reposition current user image proportionally; then ensure центр только если рамка выходит за границы
     if (userImageNode.value && userImageNode.value.image()) {
       const k = STAGE_SIZE / prevSize
-      const s = userImageNode.value.scaleX() * k
-      userImageNode.value.scale({ x: s, y: s })
+      const sx = userImageNode.value.scaleX() * k
+      const sy = userImageNode.value.scaleY() * k
+      userImageNode.value.scale({ x: sx, y: sy })
       userImageNode.value.position({
         x: userImageNode.value.x() * k,
         y: userImageNode.value.y() * k,
       })
-      // keep inside and centered if overflow
-      const imgW = userImageNode.value.width() * s
-      const imgH = userImageNode.value.height() * s
-      const bounds = { x: userImageNode.value.x(), y: userImageNode.value.y(), w: imgW, h: imgH }
-      // всегда центрируем после ресайза, чтобы рамка была в зоне видимости
-      {
+      // keep inside and center only if overflow
+      const imgW = userImageNode.value.width() * sx
+      const imgH = userImageNode.value.height() * sy
+      const bx = userImageNode.value.x()
+      const by = userImageNode.value.y()
+      const overflows = (
+        bx < PRINT_X ||
+        by < PRINT_Y ||
+        bx + imgW > PRINT_X + PRINT_SIZE ||
+        by + imgH > PRINT_Y + PRINT_SIZE
+      )
+      if (overflows) {
         userImageNode.value.position({
           x: PRINT_X + (PRINT_SIZE - imgW) / 2,
           y: PRINT_Y + (PRINT_SIZE - imgH) / 2,
@@ -447,10 +464,20 @@ function savePreviews() {
   const stage = stageRef.value
   if (!stage) return
   try {
+    // Спрятать рамку печати и снять выделение перед экспортом
+    const po = printOutlineRef.value
+    const wasVisible = po?.isVisible?.() ?? false
+    if (po) { po.visible(false); po.getLayer()?.batchDraw() }
+    // снять выделение и скрыть трансформер
+    if (transformer) { transformer.nodes([]); transformer.getLayer()?.batchDraw() }
+
     const data256 = stage.toDataURL({ pixelRatio: 256 / STAGE_SIZE })
     const data612 = stage.toDataURL({ pixelRatio: 612 / STAGE_SIZE })
     localStorage.setItem('preview256', data256)
     localStorage.setItem('preview612', data612)
+
+    // вернуть рамку печати обратно (если пользователь останется на странице)
+    if (po) { po.visible(wasVisible); po.getLayer()?.batchDraw() }
   } catch (e) {}
   persistState()
   router.push('/product')
