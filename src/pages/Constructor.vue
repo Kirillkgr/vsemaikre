@@ -81,15 +81,19 @@ function applyFilters() {
   if (threshold.value > 0) filters.push(Konva.Filters.Threshold)
   if (solarize.value) filters.push(Konva.Filters.Solarize)
   userImageNode.value.filters(filters)
+  const _sat = saturation.value * 0.5
+  const _con = contrast.value * 0.6
+  const _hue = hue.value * 0.6
+  const _thr = Math.min(0.2, threshold.value)
   userImageNode.value.brightness(brightness.value)
-  userImageNode.value.contrast(contrast.value)
-  userImageNode.value.saturation(saturation.value)
-  userImageNode.value.hue(hue.value)
+  userImageNode.value.contrast(_con)
+  userImageNode.value.saturation(_sat)
+  userImageNode.value.hue(_hue)
   userImageNode.value.blurRadius(blur.value)
   userImageNode.value.pixelSize(Math.max(1, Math.round(pixelSize.value)))
   userImageNode.value.noise(noise.value)
   if (posterize.value > 0) userImageNode.value.levels(Math.round(posterize.value))
-  userImageNode.value.threshold(threshold.value)
+  userImageNode.value.threshold(_thr)
   // cache is required for filters to work efficiently
   if (!userImageNode.value.isCached()) {
     userImageNode.value.cache()
