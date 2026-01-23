@@ -35,3 +35,18 @@ coverage
 # Vitest
 __screenshots__/
 /app/
+
+# Allowlist: track only our CS-Cart addon and its templates (override the /app/ ignore above)
+!/app/app/
+!/app/app/addons/
+!/app/app/addons/branding_text/**
+!/app/design/
+!/app/design/themes/
+!/app/design/themes/responsive/
+!/app/design/themes/responsive/templates/
+!/app/design/themes/responsive/templates/addons/
+!/app/design/themes/responsive/templates/addons/branding_text/**
+
+# Ensure infra is kept
+!docker-compose.yml
+!config/**
