@@ -2,7 +2,58 @@
 <module type="WEB_MODULE" version="4">
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
-    <content url="file://$MODULE_DIR$" />
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/app/app" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app" isTestSource="false" packagePrefix="Tygh" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/advanced_import" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/anti_fraud" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/barcode" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/call_requests" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/discussion" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/email_marketing" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/gdpr" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/geo_maps" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/gift_certificates" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/graphql_api" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/hybrid_auth" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/hybrid_auth/lib" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/mobile_app" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/paypal" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/price_list" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/product_variations/src" isTestSource="false" packagePrefix="Tygh" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/qiwi_rest" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/recaptcha" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/recaptcha/lib" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/retailcrm" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/retailcrm/Tygh/Addons/Retailcrm" isTestSource="false" packagePrefix="Tygh" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/retailcrm/lib" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/reward_points" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rma" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_boxberry" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_boxberry/lib" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_dellin" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_edost" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_exim_1c" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_hybrid_auth" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_online_cash_register" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_payments" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_pecom" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_pickpoint" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_ruble" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_russianpost" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_sberbank" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_sdek" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/rus_taxes" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/searchanise" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/seo" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/store_locator" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/storefront_rest_api" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/suppliers" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/warehouses" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/yandex_delivery" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/app/addons/yml_export" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/app/install/app" isTestSource="false" />
+    </content>
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
