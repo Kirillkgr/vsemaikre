@@ -1,0 +1,41 @@
+services:
+  php:
+    image: webdevops/php-nginx:7.4
+    container_name: cscart_php
+    ports:
+      - "80:80"
+    volumes:
+      - ./app:/app
+    environment:
+      WEB_DOCUMENT_ROOT: /app
+    depends_on:
+      - mysql
+    networks:
+      - cscart
+
+  mysql:
+    image: mysql:5.7
+    container_name: cscart_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: cscart
+      MYSQL_USER: cscart
+      MYSQL_PASSWORD: cscart
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    networks:
+      - cscart
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: cscart_mailhog
+    ports:
+      - "8025:8025"
+    networks:
+      - cscart
+
+networks:
+  cscart:
+    driver: bridge
