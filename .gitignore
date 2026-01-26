@@ -50,3 +50,6 @@ __screenshots__/
 # Ensure infra is kept
 !docker-compose.yml
 !config/**
+
+# Ignore Windows MOTW artifacts
+*.Identifier
