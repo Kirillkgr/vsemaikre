@@ -1,0 +1,96 @@
+<?xml version="1.0"?>
+<addon scheme="3.0">
+  <id>branding_text</id>
+  <name>Branding Text</name>
+  <description>MVP конструктора текстового брендирования (страница конструктора + кнопка в карточке товара)</description>
+  <version>0.0.5</version>
+  <priority>1000</priority>
+  <has_icon>false</has_icon>
+  <queries>
+    <item>
+      CREATE TABLE IF NOT EXISTS `?:branding_text_uploads` (
+        `upload_id` int(11) unsigned NOT NULL auto_increment,
+        `company_id` int(11) unsigned NOT NULL default '0',
+        `user_id` int(11) unsigned NOT NULL default '0',
+        `session_id` varchar(128) NOT NULL default '',
+        `original_filename` varchar(255) NOT NULL default '',
+        `mime_type` varchar(64) NOT NULL default '',
+        `size` int(11) unsigned NOT NULL default '0',
+        `path_original` varchar(255) NOT NULL default '',
+        `path_preview` varchar(255) NOT NULL default '',
+        `created_at` int(11) unsigned NOT NULL default '0',
+        PRIMARY KEY (`upload_id`),
+        KEY `user_id` (`user_id`),
+        KEY `session_id` (`session_id`),
+        KEY `company_id` (`company_id`)
+      ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+    </item>
+
+    <item>
+      CREATE TABLE IF NOT EXISTS `?:branding_text_items` (
+        `item_id` int(11) unsigned NOT NULL auto_increment,
+        `company_id` int(11) unsigned NOT NULL default '0',
+        `user_id` int(11) unsigned NOT NULL default '0',
+        `session_id` varchar(128) NOT NULL default '',
+        `product_id` int(11) unsigned NOT NULL default '0',
+        `product_type` varchar(64) NOT NULL default '',
+        `text_value` varchar(255) NOT NULL default '',
+        `text_params` longtext,
+        `logo_upload_id` int(11) unsigned NOT NULL default '0',
+        `logo_params` longtext,
+        `base_image_path` varchar(255) NOT NULL default '',
+        `preview_path` varchar(255) NOT NULL default '',
+        `created_at` int(11) unsigned NOT NULL default '0',
+        `updated_at` int(11) unsigned NOT NULL default '0',
+        PRIMARY KEY (`item_id`),
+        KEY `product_id` (`product_id`),
+        KEY `user_product` (`user_id`, `product_id`),
+        KEY `session_product` (`session_id`, `product_id`),
+        KEY `company_id` (`company_id`)
+      ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+    </item>
+
+    <item>
+      CREATE TABLE IF NOT EXISTS `?:branding_text_profiles` (
+        `profile_id` int(11) unsigned NOT NULL auto_increment,
+        `company_id` int(11) unsigned NOT NULL default '0',
+        `user_id` int(11) unsigned NOT NULL default '0',
+        `session_id` varchar(128) NOT NULL default '',
+        `brand_text` varchar(255) NOT NULL default '',
+        `logo_upload_id` int(11) unsigned NOT NULL default '0',
+        `defaults` longtext,
+        `updated_at` int(11) unsigned NOT NULL default '0',
+        PRIMARY KEY (`profile_id`),
+        KEY `user_id` (`user_id`),
+        KEY `session_id` (`session_id`),
+        KEY `company_id` (`company_id`)
+      ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+    </item>
+
+    <item>
+      CREATE TABLE IF NOT EXISTS `?:branding_text_product_types` (
+        `type_id` int(11) unsigned NOT NULL auto_increment,
+        `company_id` int(11) unsigned NOT NULL default '0',
+        `product_type` varchar(64) NOT NULL default '',
+        `name_ru` varchar(128) NOT NULL default '',
+        `mockup_image_path` varchar(255) NOT NULL default '',
+        `print_area_text` longtext,
+        `print_area_logo` longtext,
+        PRIMARY KEY (`type_id`),
+        UNIQUE KEY `product_type` (`product_type`, `company_id`)
+      ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+    </item>
+
+    <item>
+      INSERT IGNORE INTO `?:branding_text_product_types` (`company_id`, `product_type`, `name_ru`, `mockup_image_path`, `print_area_text`, `print_area_logo`) VALUES
+      (0, 'tshirt', 'Футболка', '', '{"x":160,"y":170,"w":300,"h":160}', '{"x":220,"y":340,"w":180,"h":180}'),
+      (0, 'hoodie', 'Худи', '', '{"x":150,"y":180,"w":320,"h":170}', '{"x":220,"y":360,"w":180,"h":180}'),
+      (0, 'mug', 'Кружка', '', '{"x":180,"y":230,"w":260,"h":120}', '{"x":260,"y":310,"w":120,"h":120}');
+    </item>
+
+    <item for="uninstall">DROP TABLE IF EXISTS `?:branding_text_items`;</item>
+    <item for="uninstall">DROP TABLE IF EXISTS `?:branding_text_uploads`;</item>
+    <item for="uninstall">DROP TABLE IF EXISTS `?:branding_text_profiles`;</item>
+    <item for="uninstall">DROP TABLE IF EXISTS `?:branding_text_product_types`;</item>
+  </queries>
+</addon>
