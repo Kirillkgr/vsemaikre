@@ -34,17 +34,38 @@ coverage
 
 # Vitest
 __screenshots__/
-/app/
+/app/*
+
+# Local dev artifacts
+/data/
+/Plan.md
 
 # Allowlist: track only our CS-Cart addon and its templates (override the /app/ ignore above)
 !/app/app/
+/app/app/*
 !/app/app/addons/
+/app/app/addons/*
+!/app/app/addons/branding_text/
 !/app/app/addons/branding_text/**
+
+!/app/js/
+/app/js/*
+!/app/js/addons/
+/app/js/addons/*
+!/app/js/addons/branding_text/
+!/app/js/addons/branding_text/**
+
 !/app/design/
+/app/design/*
 !/app/design/themes/
+/app/design/themes/*
 !/app/design/themes/responsive/
+/app/design/themes/responsive/*
 !/app/design/themes/responsive/templates/
+/app/design/themes/responsive/templates/*
 !/app/design/themes/responsive/templates/addons/
+/app/design/themes/responsive/templates/addons/*
+!/app/design/themes/responsive/templates/addons/branding_text/
 !/app/design/themes/responsive/templates/addons/branding_text/**
 
 # Ensure infra is kept
@@ -53,3 +74,18 @@ __screenshots__/
 
 # Ignore Windows MOTW artifacts
 *.Identifier
+*:Zone.Identifier
+/data/mysql/auto.cnf
+/data/mysql/ca.pem
+/data/mysql/ca-key.pem
+/data/mysql/client-cert.pem
+/data/mysql/client-key.pem
+/data/mysql/ib_buffer_pool
+/data/mysql/ib_logfile0
+/data/mysql/ib_logfile1
+/data/mysql/ibdata1
+/data/mysql/ibtmp1
+/data/mysql/private_key.pem
+/data/mysql/public_key.pem
+/data/mysql/server-cert.pem
+/data/mysql/server-key.pem

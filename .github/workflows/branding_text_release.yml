@@ -1,0 +1,63 @@
+name: branding_text release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read addon version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          xml="app/app/addons/branding_text/addon.xml"
+          if [[ ! -f "$xml" ]]; then
+            echo "addon.xml not found at $xml" >&2
+            exit 1
+          fi
+          v=$(sed -nE 's/.*<version>([^<]+)<\/version>.*/\1/p' "$xml" | head -n 1)
+          if [[ -z "$v" ]]; then
+            echo "Failed to read <version> from addon.xml" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build addon zip (no bump)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/build-addon.sh
+          scripts/build-addon.sh --no-bump
+
+      - name: Verify tag matches addon.xml version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          expected="v${{ steps.ver.outputs.version }}"
+          if [[ "$tag" != "$expected" ]]; then
+            echo "Tag ($tag) does not match addon.xml version ($expected)" >&2
+            exit 1
+          fi
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: branding_text ${{ steps.ver.outputs.version }}
+          files: |
+            addon/branding_text-${{ steps.ver.outputs.version }}.zip
