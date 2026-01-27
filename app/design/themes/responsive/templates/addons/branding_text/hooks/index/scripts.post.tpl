@@ -1,5 +1,3 @@
-{script src="js/addons/branding_text/designer.js"}
-
 <script type="text/javascript">
     (function (_, $) {
 {literal}
@@ -9,3 +7,7 @@
 {/literal}
     })(Tygh, Tygh.$);
 </script>
+
+{script src="js/addons/branding_text/bt_core.js"}
+{script src="js/addons/branding_text/bt_preview.js"}
+{script src="js/addons/branding_text/designer.js"}
