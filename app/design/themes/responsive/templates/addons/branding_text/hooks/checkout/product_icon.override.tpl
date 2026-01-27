@@ -7,7 +7,9 @@
     <a href="{"products.view?product_id=`$product.product_id`"|fn_url}">
         <img
             class="ty-pict cm-image"
-            src="{$bt_preview_url}"
+            src="{$bt_fallback_url}"
+            data-bt-preview-url="{$bt_preview_url}"
+            data-bt-product-id="{$product.product_id}"
             {if $bt_w} width="{$bt_w}"{/if}
             {if $bt_h} height="{$bt_h}"{/if}
             style="{if $bt_w}width:{$bt_w}px; max-width:{$bt_w}px;{/if}{if $bt_h}height:{$bt_h}px; max-height:{$bt_h}px;{/if}object-fit:contain;"

@@ -6,7 +6,9 @@
   window.__BT_INIT__ = window.__BT_INIT__ || {};
 
   function dbg(event, payload) {
-    if (!DEBUG) return;
+    var force = false;
+    try { force = !!window.__BT_FORCE_LOGS__; } catch (e0) {}
+    if (!DEBUG && !force) return;
     try {
       var msg = {
         ts: Date.now(),
@@ -20,13 +22,92 @@
     } catch (e) {}
   }
 
-  dbg('designer_js_loaded', { readyState: document.readyState });
+  dbg('designer_js_loaded', { readyState: document.readyState, debug: DEBUG, force: (function () { try { return !!window.__BT_FORCE_LOGS__; } catch (e) { return false; } })() });
+
+  // Safari (and any native selector engine) cannot handle jQuery-only pseudos like :visible
+  // inside Element.matches(). Some CS-Cart core code may pass such selectors.
+  // Fallback to jQuery .is() only when native matches throws a SyntaxError.
+  try {
+    if (window.Element && window.Element.prototype) {
+      var _btMatches = window.Element.prototype.matches;
+      if (_btMatches && !_btMatches.__bt_patched__) {
+        window.Element.prototype.matches = function (selector) {
+          try {
+            return _btMatches.call(this, selector);
+          } catch (e) {
+            try {
+              if (e && (e.name === 'SyntaxError' || String(e).indexOf('SyntaxError') >= 0)) {
+                if (window.Tygh && window.Tygh.$) {
+                  return window.Tygh.$(this).is(selector);
+                }
+              }
+            } catch (e2) {}
+            throw e;
+          }
+        };
+        window.Element.prototype.matches.__bt_patched__ = true;
+      }
+    }
+  } catch (e0) {}
 
   function btGetGlobalCfg() {
     try {
       return window.__BT_GLOBAL__ || null;
     } catch (e) {
       return null;
+    }
+  }
+
+  function btGetBrandedStorageKey() {
+    try {
+      var g = btGetGlobalCfg();
+      var uid = g && g.user_id ? String(g.user_id) : '0';
+      return 'bt_branded_products_' + uid;
+    } catch (e0) {
+      return 'bt_branded_products_0';
+    }
+  }
+
+  function btGetBrandedProductsSet() {
+    var set = {};
+    try {
+      if (!window.localStorage) return set;
+      var raw = window.localStorage.getItem(btGetBrandedStorageKey()) || '';
+      if (!raw) return set;
+      var arr = JSON.parse(raw);
+      if (!arr || !arr.length) return set;
+      for (var i = 0; i < arr.length; i++) {
+        var pid = parseInt(arr[i], 10) || 0;
+        if (pid) set[String(pid)] = true;
+      }
+    } catch (e1) {}
+    return set;
+  }
+
+  function btMarkProductBranded(productId) {
+    try {
+      var pid = parseInt(productId, 10) || 0;
+      if (!pid) return;
+      if (!window.localStorage) return;
+      var key = btGetBrandedStorageKey();
+      var set = btGetBrandedProductsSet();
+      set[String(pid)] = true;
+      var arr = Object.keys(set);
+      // keep it small (latest ~500 ids)
+      if (arr.length > 500) arr = arr.slice(arr.length - 500);
+      window.localStorage.setItem(key, JSON.stringify(arr));
+      dbg('branded_mark', { pid: pid, key: key, count: arr.length });
+    } catch (e0) {}
+  }
+
+  function btIsProductBranded(productId) {
+    try {
+      var pid = parseInt(productId, 10) || 0;
+      if (!pid) return false;
+      var set = btGetBrandedProductsSet();
+      return !!set[String(pid)];
+    } catch (e0) {
+      return false;
     }
   }
 
@@ -51,12 +132,23 @@
 
   function btApplyPreviewToListingImage(linkEl, imgEl) {
     var g = btGetGlobalCfg();
+    dbg('listing_try', {
+      hasGlobal: !!g,
+      user_id: g ? g.user_id : null,
+      hasPreviewUrl: g ? !!g.previewForProduct : null
+    });
     if (!g || !g.previewForProduct || !g.user_id) return;
     if (!linkEl || !imgEl) return;
     if (imgEl.getAttribute && imgEl.getAttribute('data-bt-preview-applied') === 'Y') return;
 
     var pid = btParseProductIdFromHref(linkEl.getAttribute ? linkEl.getAttribute('href') : '');
     if (!pid) return;
+
+    // To avoid massive HEAD 404 spam on catalog/home, check only products that were branded by this user.
+    if (!btIsProductBranded(pid)) {
+      dbg('listing_skip_not_branded', { pid: pid });
+      return;
+    }
 
     function extractThumbSizeFromSrc(src) {
       if (!src) return null;
@@ -100,6 +192,7 @@
     var sw = (size && size.w) ? size.w : 0;
     var sh = (size && size.h) ? size.h : 0;
     var key = String(pid) + '|' + String(sw) + 'x' + String(sh);
+    dbg('listing_head_start', { pid: pid, url: url, w: sw, h: sh, key: key });
     if (!window.__BT_PREVIEW_HEAD__[key]) {
       window.__BT_PREVIEW_HEAD__[key] = fetch(url, { method: 'HEAD', credentials: 'same-origin' })
           .then(function (r) { return !!(r && r.ok); })
@@ -107,26 +200,102 @@
     }
 
     window.__BT_PREVIEW_HEAD__[key].then(function (ok) {
+      dbg('listing_head_result', { pid: pid, ok: ok, key: key });
       if (!ok) return;
       imgEl.src = url;
       imgEl.onerror = function () {
         imgEl.src = origSrc;
       };
+      try { imgEl.setAttribute('data-bt-preview-applied', 'Y'); } catch (e0) {}
+      dbg('listing_swap', { pid: pid, url: url });
     });
   }
 
   function btReplaceCatalogImages(context) {
     var g = btGetGlobalCfg();
+    dbg('catalog_scan_start', {
+      hasGlobal: !!g,
+      user_id: g ? g.user_id : null,
+      hasPreviewUrl: g ? !!g.previewForProduct : null
+    });
     if (!g || !g.previewForProduct || !g.user_id) return;
     context = context || document;
 
     // Grid/listing product cards: <a href="...products.view&product_id=..."> <img class="ty-pict cm-image" ...>
     var links = context.querySelectorAll ? context.querySelectorAll('a[href*="dispatch=products.view"][href*="product_id="], a[href*="products.view"][href*="product_id="]') : [];
+    dbg('catalog_scan_links', { count: links ? links.length : 0 });
     for (var i = 0; i < links.length; i++) {
       var a = links[i];
       var img = a.querySelector ? a.querySelector('img.cm-image, img.ty-pict, img') : null;
       if (!img) continue;
       btApplyPreviewToListingImage(a, img);
+    }
+  }
+
+  function btApplyPreviewToMarkedImages(context) {
+    var g = btGetGlobalCfg();
+    dbg('marked_scan_start', {
+      hasGlobal: !!g,
+      user_id: g ? g.user_id : null,
+      hasPreviewUrl: g ? !!g.previewForProduct : null
+    });
+    if (!g || !g.previewForProduct || !g.user_id) return;
+    context = context || document;
+
+    var imgs = context.querySelectorAll ? context.querySelectorAll('img[data-bt-preview-url]') : [];
+    dbg('marked_scan_imgs', { count: imgs ? imgs.length : 0 });
+    for (var i = 0; i < imgs.length; i++) {
+      var imgEl = imgs[i];
+      if (!imgEl || !imgEl.getAttribute) continue;
+      if (imgEl.getAttribute('data-bt-preview-applied') === 'Y') continue;
+
+      var url = imgEl.getAttribute('data-bt-preview-url') || '';
+      // Some templates/autoescaping may leave '&amp;' in attribute values; normalize to avoid malformed requests.
+      try { url = String(url).replace(/&amp;/g, '&'); } catch (e00) {}
+      if (!url) continue;
+
+      var pid = parseInt(imgEl.getAttribute('data-bt-product-id') || '0', 10) || 0;
+
+      if (pid && !btIsProductBranded(pid)) {
+        dbg('marked_skip_not_branded', { pid: pid });
+        continue;
+      }
+
+      // Cache by pid + requested size (w/h in query string).
+      var w = 0;
+      var h = 0;
+      try {
+        var mw = String(url).match(/[?&]w=(\d+)/);
+        var mh = String(url).match(/[?&]h=(\d+)/);
+        if (mw && mw[1]) w = parseInt(mw[1], 10) || 0;
+        if (mh && mh[1]) h = parseInt(mh[1], 10) || 0;
+      } catch (e0) {}
+
+      // Keep original src for fallback.
+      var origSrc = imgEl.getAttribute('data-bt-orig-src') || imgEl.getAttribute('src') || '';
+      imgEl.setAttribute('data-bt-orig-src', origSrc);
+
+      window.__BT_PREVIEW_HEAD__ = window.__BT_PREVIEW_HEAD__ || {};
+      var key = String(pid) + '|' + String(w) + 'x' + String(h);
+      if (!window.__BT_PREVIEW_HEAD__[key]) {
+        dbg('marked_head_start', { pid: pid, url: url, w: w, h: h, key: key });
+        window.__BT_PREVIEW_HEAD__[key] = fetch(url, { method: 'HEAD', credentials: 'same-origin' })
+            .then(function (r) { return !!(r && r.ok); })
+            .catch(function () { return false; });
+      }
+
+      window.__BT_PREVIEW_HEAD__[key].then(function (ok) {
+        dbg('marked_head_result', { pid: pid, ok: ok, key: key });
+        if (!ok) return;
+        try {
+          imgEl.setAttribute('data-bt-preview-applied', 'Y');
+          imgEl.src = url;
+          imgEl.onerror = function () {
+            imgEl.src = origSrc;
+          };
+          dbg('marked_swap', { pid: pid, url: url });
+        } catch (e1) {}
+      });
     }
   }
 
@@ -302,21 +471,68 @@
         };
       }
 
-      if (link) {
-        link.setAttribute('href', url);
+      // Avoid console 404 spam: precheck by HEAD and only swap if preview exists.
+      // After save() we may have a short race: preview file/resized cache is not ready yet,
+      // so do a few retries when cacheBust=true.
+      window.__BT_PREVIEW_HEAD__ = window.__BT_PREVIEW_HEAD__ || {};
+      var key = String(pid) + '|product|0x0';
+      var retryMax = opts.cacheBust ? 6 : 1;
+      var retryDelays = [0, 200, 450, 900, 1400, 2200];
+      var attempt = 0;
+
+      function headOnce(urlToCheck, attemptNo) {
+        dbg('product_head_start', { pid: pid, url: urlToCheck, cacheBust: !!opts.cacheBust, key: key, attempt: attemptNo });
+        window.__BT_PREVIEW_HEAD__[key] = fetch(urlToCheck, { method: 'HEAD', credentials: 'same-origin' })
+            .then(function (r) { return !!(r && r.ok); })
+            .catch(function () { return false; });
+        return window.__BT_PREVIEW_HEAD__[key];
       }
-      img.setAttribute('src', url);
-      img.onerror = function () {
+
+      function doAttempt() {
+        var urlNow = url;
+        // If retrying after cacheBust, always change _t to bypass caches.
+        if (opts.cacheBust) {
+          urlNow = buildUrlWithParams(cfg.urls.previewForProduct, {
+            product_id: pid,
+            _t: Date.now()
+          });
+        }
+        return headOnce(urlNow, attempt).then(function (ok) {
+          dbg('product_head_result', { pid: pid, ok: ok, key: key, attempt: attempt });
+          if (ok) return { ok: true, url: urlNow };
+          if (!opts.cacheBust) return { ok: false, url: urlNow };
+          attempt++;
+          if (attempt >= retryMax) return { ok: false, url: urlNow };
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              doAttempt().then(resolve);
+            }, retryDelays[attempt] || 250);
+          });
+        });
+      }
+
+      doAttempt().then(function (res) {
+        if (!res || !res.ok) return;
+        var finalUrl = res.url;
         try {
-          img.onerror = null;
-          if (state._origProductImage && state._origProductImage.src) {
-            img.setAttribute('src', state._origProductImage.src);
+          if (link) {
+            link.setAttribute('href', finalUrl);
           }
-          if (link && state._origProductImage && state._origProductImage.href) {
-            link.setAttribute('href', state._origProductImage.href);
-          }
-        } catch (e) {}
-      };
+          img.setAttribute('src', finalUrl);
+          img.onerror = function () {
+            try {
+              img.onerror = null;
+              if (state._origProductImage && state._origProductImage.src) {
+                img.setAttribute('src', state._origProductImage.src);
+              }
+              if (link && state._origProductImage && state._origProductImage.href) {
+                link.setAttribute('href', state._origProductImage.href);
+              }
+            } catch (e) {}
+          };
+          dbg('product_swap', { pid: pid, url: finalUrl });
+        } catch (e0) {}
+      });
     }
 
     function clampToPrint(obj) {
@@ -687,17 +903,14 @@
       dbg('load_start', { pid: pid, url: url });
       fetchJson(url, { credentials: 'same-origin' })
           .then(function (json) {
-            if (!json || !json.ok) {
+            if (!json || !json.ok || !json.item) {
               dbg('load_failed', { pid: pid, response: json });
-              return;
-            }
-
-            if (!json.item) {
-              dbg('load_empty', { pid: pid });
+              setStatus(statusEl, 'Ошибка загрузки: ' + ((json && json.error) ? json.error : 'unknown'), true);
               return;
             }
 
             dbg('load_ok', { pid: pid, item_id: json.item.item_id });
+            try { btMarkProductBranded(pid); } catch (e9) {}
 
             // Restore text
             try {
@@ -878,7 +1091,7 @@
         var u = uploads[i];
         var isActive = state.activeUploadId && (state.activeUploadId === u.upload_id);
         html += '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">'
-            + '<img src="' + buildUrlWithParams(cfg.urls.uploadPreview, { upload_id: u.upload_id }) + '" style="width:44px; height:44px; object-fit:contain; border:1px solid #ddd; background:#fff;" />'
+            + '<img src="' + buildUrlWithParams(cfg.urls.uploadPreview, { upload_id: u.upload_id }) + '" alt="" style="width:44px; height:44px; object-fit:contain; border:1px solid #ddd; background:#fff;" />'
             + '<button type="button" class="ty-btn" data-bt-use-upload-id="' + u.upload_id + '" data-bt-pid="' + pid + '">' + (isActive ? 'Выбрано' : 'Выбрать') + '</button>'
             + '<div style="font-size:12px; line-height:1.2;">' + String(u.original_filename || ('upload #' + u.upload_id)) + '</div>'
             + '</div>';
@@ -1259,6 +1472,7 @@
               return;
             }
             dbg('save_ok', { pid: pid, item_id: json.item_id });
+            try { btMarkProductBranded(pid); } catch (e9) {}
             setStatus(statusEl, 'Сохранено (item_id=' + json.item_id + ')', false);
             if (typeof onSuccess === 'function') {
               try { onSuccess(json); } catch (e0) {}
@@ -1377,14 +1591,19 @@
   }
 
   // Apply preview replacement for catalog/minicart images (authorized user) on initial load
-  try { btReplaceCatalogImages(document); } catch (e0) {}
+  try {
+    btReplaceCatalogImages(document);
+    btApplyPreviewToMarkedImages(document);
+  } catch (e0) {}
 
   // And after CS-Cart AJAX renders blocks
   try {
     if (window.Tygh && window.Tygh.$ && window.Tygh.$.ceEvent) {
       window.Tygh.$.ceEvent('on', 'ce.commoninit', function (ctx) {
         try {
-          btReplaceCatalogImages(ctx && ctx[0] ? ctx[0] : (ctx || document));
+          var root = (ctx && ctx[0]) ? ctx[0] : (ctx || document);
+          btReplaceCatalogImages(root);
+          btApplyPreviewToMarkedImages(root);
         } catch (e1) {}
       });
     }
