@@ -22,6 +22,114 @@
 
   dbg('designer_js_loaded', { readyState: document.readyState });
 
+  function btGetGlobalCfg() {
+    try {
+      return window.__BT_GLOBAL__ || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function btBuildUrlWithParams(url, params) {
+    var sep = (url.indexOf('?') >= 0) ? '&' : '?';
+    var s = [];
+    for (var k in (params || {})) {
+      if (!params.hasOwnProperty(k)) continue;
+      s.push(encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k])));
+    }
+    return url + (s.length ? (sep + s.join('&')) : '');
+  }
+
+  function btParseProductIdFromHref(href) {
+    if (!href) return 0;
+    try {
+      var m = String(href).match(/[?&]product_id=(\d+)/);
+      if (m && m[1]) return parseInt(m[1], 10) || 0;
+    } catch (e) {}
+    return 0;
+  }
+
+  function btApplyPreviewToListingImage(linkEl, imgEl) {
+    var g = btGetGlobalCfg();
+    if (!g || !g.previewForProduct || !g.user_id) return;
+    if (!linkEl || !imgEl) return;
+    if (imgEl.getAttribute && imgEl.getAttribute('data-bt-preview-applied') === 'Y') return;
+
+    var pid = btParseProductIdFromHref(linkEl.getAttribute ? linkEl.getAttribute('href') : '');
+    if (!pid) return;
+
+    function extractThumbSizeFromSrc(src) {
+      if (!src) return null;
+      try {
+        // CS-Cart thumbnails: /images/thumbnails/W/H/detailed/...
+        var m = String(src).match(/\/thumbnails\/(\d+)\/(\d+)\//);
+        if (m && m[1] && m[2]) {
+          return { w: parseInt(m[1], 10) || 0, h: parseInt(m[2], 10) || 0 };
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    function extractRenderedSize(img) {
+      try {
+        var r = img.getBoundingClientRect ? img.getBoundingClientRect() : null;
+        if (r && r.width && r.height) {
+          var w = Math.round(r.width);
+          var h = Math.round(r.height);
+          if (w > 0 && h > 0 && w <= 2000 && h <= 2000) return { w: w, h: h };
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    var origSrc = imgEl.getAttribute('src') || '';
+    var size = extractThumbSizeFromSrc(origSrc) || extractRenderedSize(imgEl);
+    var params = { product_id: pid, _t: 0 };
+    if (size && size.w && size.h) {
+      params.w = size.w;
+      params.h = size.h;
+    }
+    var url = btBuildUrlWithParams(g.previewForProduct, params);
+
+    // Keep original src for fallback.
+    origSrc = imgEl.getAttribute('data-bt-orig-src') || imgEl.src;
+    imgEl.setAttribute('data-bt-orig-src', origSrc);
+
+    // Avoid console 404 spam: precheck by HEAD and only swap if preview exists.
+    window.__BT_PREVIEW_HEAD__ = window.__BT_PREVIEW_HEAD__ || {};
+    var sw = (size && size.w) ? size.w : 0;
+    var sh = (size && size.h) ? size.h : 0;
+    var key = String(pid) + '|' + String(sw) + 'x' + String(sh);
+    if (!window.__BT_PREVIEW_HEAD__[key]) {
+      window.__BT_PREVIEW_HEAD__[key] = fetch(url, { method: 'HEAD', credentials: 'same-origin' })
+          .then(function (r) { return !!(r && r.ok); })
+          .catch(function () { return false; });
+    }
+
+    window.__BT_PREVIEW_HEAD__[key].then(function (ok) {
+      if (!ok) return;
+      imgEl.src = url;
+      imgEl.onerror = function () {
+        imgEl.src = origSrc;
+      };
+    });
+  }
+
+  function btReplaceCatalogImages(context) {
+    var g = btGetGlobalCfg();
+    if (!g || !g.previewForProduct || !g.user_id) return;
+    context = context || document;
+
+    // Grid/listing product cards: <a href="...products.view&product_id=..."> <img class="ty-pict cm-image" ...>
+    var links = context.querySelectorAll ? context.querySelectorAll('a[href*="dispatch=products.view"][href*="product_id="], a[href*="products.view"][href*="product_id="]') : [];
+    for (var i = 0; i < links.length; i++) {
+      var a = links[i];
+      var img = a.querySelector ? a.querySelector('img.cm-image, img.ty-pict, img') : null;
+      if (!img) continue;
+      btApplyPreviewToListingImage(a, img);
+    }
+  }
+
   function setStatus(el, text, isError) {
     if (!el) return;
     el.innerHTML = '<div class="' + (isError ? 'ty-error-text' : 'ty-success-text') + '">' + text + '</div>';
@@ -29,11 +137,82 @@
 
   function ensureFabric(cb, onError) {
     if (window.fabric) return cb();
-    var s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js';
-    s.onload = cb;
-    s.onerror = onError || function () {};
-    document.head.appendChild(s);
+
+    // Load Fabric only once per page to avoid duplicate definitions.
+    // Use a shared promise and a stable script id.
+    window.__BT_FABRIC__ = window.__BT_FABRIC__ || {};
+    if (!window.__BT_FABRIC__.promise) {
+      window.__BT_FABRIC__.promise = new Promise(function (resolve, reject) {
+        try {
+          if (window.fabric) {
+            resolve(window.fabric);
+            return;
+          }
+
+          var existing = document.getElementById('bt-fabric-script');
+          if (existing) {
+            existing.addEventListener('load', function () { resolve(window.fabric); });
+            existing.addEventListener('error', function () {
+              reject(new Error('Failed to load fabric.js'));
+            });
+            return;
+          }
+
+          function buildUrl(rel) {
+            try {
+              if (window.Tygh && window.Tygh.fn_url) {
+                return window.Tygh.fn_url(rel);
+              }
+            } catch (e0) {}
+            return rel;
+          }
+
+          var localSrc = buildUrl('js/addons/branding_text/vendor/fabric.min.js');
+          var cdnSrc = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js';
+
+          function attachHandlers(scriptEl, errMessageIfNoFabric) {
+            scriptEl.onload = function () {
+              if (window.fabric) {
+                resolve(window.fabric);
+              } else {
+                reject(new Error(errMessageIfNoFabric || 'fabric.js loaded but window.fabric is missing'));
+              }
+            };
+          }
+
+          var s = document.createElement('script');
+          s.id = 'bt-fabric-script';
+          s.async = true;
+          s.src = localSrc;
+          attachHandlers(s);
+
+          s.onerror = function () {
+            // Fallback to CDN if local file is missing. Create a fresh tag (some browsers don't reliably re-load on src change after error).
+            try { if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e0) {}
+
+            var s2 = document.createElement('script');
+            s2.id = 'bt-fabric-script';
+            s2.async = true;
+            s2.src = cdnSrc;
+            attachHandlers(s2, 'fabric.js loaded from CDN but window.fabric is missing');
+
+            s2.onerror = function () {
+              reject(new Error('Failed to load fabric.js (local file missing and CDN may be blocked by browser privacy settings)'));
+            };
+
+            document.head.appendChild(s2);
+          };
+
+          document.head.appendChild(s);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+
+    window.__BT_FABRIC__.promise
+        .then(function () { try { cb(); } catch (e0) {} })
+        .catch(function (e) { try { (onError || function () {})(e); } catch (e1) {} });
   }
 
   function initForProduct(pid) {
@@ -57,6 +236,7 @@
 
     var btnAddText = document.getElementById('bt-add-text-' + pid);
     var btnSave = document.getElementById('bt-save-' + pid);
+    var btnAddToCart = document.getElementById('bt-add-to-cart-' + pid);
     var upload = document.getElementById('bt-upload-' + pid);
 
     var PRINT = { x: 0, y: 0, w: 520, h: 520 };
@@ -76,6 +256,8 @@
       ro: null,
       hiddenRightNodes: null,
       activeUploadId: 0,
+      logoFilterPreset: 'none',
+      logoFiltersMode: 'preset'
     };
 
     function qs(id) { return document.getElementById(id + '-' + pid); }
@@ -86,9 +268,56 @@
       if (!cfg.urls.listUploads && cfg.urls.list_uploads) cfg.urls.listUploads = cfg.urls.list_uploads;
       if (!cfg.urls.uploadPreview && cfg.urls.upload_preview) cfg.urls.uploadPreview = cfg.urls.upload_preview;
       if (!cfg.urls.uploadLogo && cfg.urls.upload_logo) cfg.urls.uploadLogo = cfg.urls.upload_logo;
+      if (!cfg.urls.previewForProduct && cfg.urls.preview_for_product) cfg.urls.previewForProduct = cfg.urls.preview_for_product;
     }
 
     normalizeUrls();
+
+    function applyPreviewToProductImage(opts) {
+      opts = opts || {};
+      if (!cfg || !cfg.urls || !cfg.urls.previewForProduct) return;
+      if (!cfg.user_id) return; // replace only for authorized users
+
+      // Build preview URL (owner context is derived from session/auth on server)
+      var url = buildUrlWithParams(cfg.urls.previewForProduct, {
+        product_id: pid,
+        _t: opts.cacheBust ? Date.now() : 0
+      });
+
+      // Locate product image block
+      var wrapper = document.querySelector('.ty-product-img.cm-preview-wrapper') || document.querySelector('.ty-product-img');
+      if (!wrapper) return;
+
+      // easyzoom structure: <span class="ty-image-zoom__wrapper ..."><a ...><img ... /></a></span>
+      var link = wrapper.querySelector('a.cm-image-previewer, a.cm-previewer, a.ty-previewer, a#det_img_link_' + pid);
+      if (!link) link = wrapper.querySelector('a[href]');
+      var img = link ? link.querySelector('img.ty-pict, img.cm-image, img') : wrapper.querySelector('img.ty-pict, img.cm-image, img');
+      if (!img) return;
+
+      // Remember original to allow fallback
+      if (!state._origProductImage) {
+        state._origProductImage = {
+          href: link ? link.getAttribute('href') : '',
+          src: img.getAttribute('src')
+        };
+      }
+
+      if (link) {
+        link.setAttribute('href', url);
+      }
+      img.setAttribute('src', url);
+      img.onerror = function () {
+        try {
+          img.onerror = null;
+          if (state._origProductImage && state._origProductImage.src) {
+            img.setAttribute('src', state._origProductImage.src);
+          }
+          if (link && state._origProductImage && state._origProductImage.href) {
+            link.setAttribute('href', state._origProductImage.href);
+          }
+        } catch (e) {}
+      };
+    }
 
     function clampToPrint(obj) {
       if (!obj || !state.canvas) return;
@@ -151,6 +380,10 @@
                   dbg('clip_load_ok', { pid: pid, w: clipImg.width, h: clipImg.height });
                   if (state.logoObject) {
                     state.logoObject.set({ clipPath: state.clipImage });
+                    state.canvas.requestRenderAll();
+                  }
+                  if (state.textObject) {
+                    state.textObject.set({ clipPath: state.clipImage });
                     state.canvas.requestRenderAll();
                   }
                 } catch (e2) {
@@ -481,6 +714,16 @@
             initCanvas();
             if (json.item.text_params && typeof json.item.text_params === 'object') {
               var tpp = json.item.text_params;
+              function sanitizeOriginX(v) {
+                v = String(v || '').toLowerCase();
+                return (v === 'left' || v === 'center' || v === 'right') ? v : 'left';
+              }
+              function sanitizeOriginY(v) {
+                v = String(v || '').toLowerCase();
+                // IMPORTANT: do not allow invalid values like 'alphabetical' that can leak into canvas textBaseline.
+                return (v === 'top' || v === 'center' || v === 'bottom') ? v : 'top';
+              }
+
               if (!state.textObject && window.fabric) {
                 state.textObject = new window.fabric.IText(String(json.item.text_value || ' '), {
                   left: (tpp.left != null) ? tpp.left : (PRINT.x + 20),
@@ -491,7 +734,9 @@
                   opacity: (tpp.opacity != null) ? tpp.opacity : 1,
                   angle: (tpp.angle != null) ? tpp.angle : 0,
                   scaleX: (tpp.scaleX != null) ? tpp.scaleX : 1,
-                  scaleY: (tpp.scaleY != null) ? tpp.scaleY : 1
+                  scaleY: (tpp.scaleY != null) ? tpp.scaleY : 1,
+                  originX: sanitizeOriginX(tpp.originX),
+                  originY: sanitizeOriginY(tpp.originY)
                 });
                 state.canvas.add(state.textObject);
               } else if (state.textObject) {
@@ -505,14 +750,40 @@
                   opacity: (tpp.opacity != null) ? tpp.opacity : state.textObject.opacity,
                   angle: (tpp.angle != null) ? tpp.angle : state.textObject.angle,
                   scaleX: (tpp.scaleX != null) ? tpp.scaleX : state.textObject.scaleX,
-                  scaleY: (tpp.scaleY != null) ? tpp.scaleY : state.textObject.scaleY
+                  scaleY: (tpp.scaleY != null) ? tpp.scaleY : state.textObject.scaleY,
+                  originX: sanitizeOriginX(tpp.originX || state.textObject.originX),
+                  originY: sanitizeOriginY(tpp.originY || state.textObject.originY)
                 });
               }
               if (state.textObject) {
                 state.textObject.setCoords();
+                if (state.clipImage) {
+                  state.textObject.set({ clipPath: state.clipImage });
+                }
+                clampToPrint(state.textObject);
               }
             } else if (json.item.text_value) {
               upsertText();
+              if (state.textObject && state.clipImage) {
+                state.textObject.set({ clipPath: state.clipImage });
+              }
+            }
+
+            // IMPORTANT: Set pending logo params BEFORE setActiveUpload(), because setActiveUpload is async
+            // and may load+apply immediately; otherwise we have a race and filters/params may not be restored.
+            if (json.item.logo_params && typeof json.item.logo_params === 'object') {
+              state._pendingLogoParams = json.item.logo_params;
+              try {
+                var lpp = json.item.logo_params;
+                if (lpp && lpp.filters && typeof lpp.filters === 'object') {
+                  if (lpp.filters.preset && typeof lpp.filters.preset === 'string') {
+                    state.logoFilterPreset = String(lpp.filters.preset);
+                  }
+                  if (qs('bt-img-bright') && lpp.filters.brightness != null) qs('bt-img-bright').value = String(lpp.filters.brightness);
+                  if (qs('bt-img-contrast') && lpp.filters.contrast != null) qs('bt-img-contrast').value = String(lpp.filters.contrast);
+                  if (qs('bt-img-sat') && lpp.filters.saturation != null) qs('bt-img-sat').value = String(lpp.filters.saturation);
+                }
+              } catch (e1) {}
             }
 
             // Restore logo from saved upload id
@@ -523,21 +794,65 @@
               }
             }
 
-            // Apply logo params (if logo is already loaded - will also be applied after setActiveUpload)
-            if (json.item.logo_params && typeof json.item.logo_params === 'object') {
-              state._pendingLogoParams = json.item.logo_params;
-            }
+            // Enforce stacking: text must be above logo (and both below print rect)
+            try {
+              if (state.logoObject && state.logoObject.bringToFront) state.logoObject.bringToFront();
+              if (state.textObject && state.textObject.bringToFront) state.textObject.bringToFront();
+              if (state.printRect && state.printRect.bringToFront) state.printRect.bringToFront();
+            } catch (e2) {}
 
             if (state.canvas) state.canvas.requestRenderAll();
           })
           .catch(function (e) {
             dbg('load_error', { pid: pid, message: (e && e.message) ? e.message : e });
+            try {
+              if (e && e._bt && e._bt.status) {
+                setStatus(statusEl, 'Ошибка загрузки (' + e._bt.status + '): ' + (e._bt.contentType || '') + '<br />' + (e._bt.snippet || ''), true);
+              } else {
+                setStatus(statusEl, 'Ошибка загрузки: ' + (e && e.message ? e.message : e), true);
+              }
+            } catch (e0) {}
           });
     }
 
     function fetchJson(url, opts) {
       return fetch(url, opts || { credentials: 'same-origin' })
-          .then(function (r) { return r.json(); });
+          .then(function (r) {
+            return r.text().then(function (txt) {
+              var ct = '';
+              try { ct = r.headers && r.headers.get ? (r.headers.get('content-type') || '') : ''; } catch (e0) {}
+
+              // Some CS-Cart errors return HTML; avoid JSON.parse crash and surface details.
+              var json = null;
+              try {
+                json = txt ? JSON.parse(txt) : null;
+              } catch (e1) {
+                var err = new Error('Non-JSON response');
+                err._bt = {
+                  status: r.status,
+                  ok: r.ok,
+                  contentType: ct,
+                  snippet: String(txt || '').slice(0, 350)
+                };
+                throw err;
+              }
+
+              // If HTTP is not ok, still throw with snippet (but keep parsed json for debug).
+              if (!r.ok) {
+                var err2 = new Error('HTTP ' + r.status);
+                err2._bt = {
+                  status: r.status,
+                  ok: r.ok,
+                  contentType: ct,
+                  snippet: String(txt || '').slice(0, 350),
+                  json: json
+                };
+                throw err2;
+              }
+
+              return json;
+            });
+          });
     }
 
     function buildUrlWithParams(url, params) {
@@ -632,11 +947,42 @@
               if (lp.opacity != null) img.opacity = lp.opacity;
               img.setCoords();
               if (qs('bt-img-opacity') && lp.opacity != null) qs('bt-img-opacity').value = String(lp.opacity);
+
+              // Restore filters
+              if (lp.filters && typeof lp.filters === 'object') {
+                var f = lp.filters;
+                var hasNumeric = (f.brightness !== null && f.brightness != null)
+                    || (f.contrast !== null && f.contrast != null)
+                    || (f.saturation !== null && f.saturation != null);
+                if (f.preset && typeof f.preset === 'string') {
+                  state.logoFilterPreset = String(f.preset);
+                  if (!hasNumeric) {
+                    state.logoFiltersMode = 'preset';
+                    applyPresetFilter(state.logoFilterPreset);
+                  }
+                }
+                if (qs('bt-img-bright') && f.brightness != null) qs('bt-img-bright').value = String(f.brightness);
+                if (qs('bt-img-contrast') && f.contrast != null) qs('bt-img-contrast').value = String(f.contrast);
+                if (qs('bt-img-sat') && f.saturation != null) qs('bt-img-sat').value = String(f.saturation);
+                if (hasNumeric) {
+                  state.logoFiltersMode = 'manual';
+                  applyImageFilters();
+                }
+              }
+
               state._pendingLogoParams = null;
             }
           } catch (e0) {}
 
           clampToPrint(img);
+
+          // Ensure stacking: logo below text, print rect on top
+          try {
+            if (state.logoObject && state.logoObject.bringToFront) state.logoObject.bringToFront();
+            if (state.textObject && state.textObject.bringToFront) state.textObject.bringToFront();
+            if (state.printRect && state.printRect.bringToFront) state.printRect.bringToFront();
+          } catch (e1) {}
+
           state.canvas.requestRenderAll();
           loadUploadsList();
         }, { crossOrigin: 'anonymous' });
@@ -680,6 +1026,7 @@
 
     function applyImageFilters() {
       if (!state.logoObject || !state.logoObject.filters || !window.fabric) return;
+      state.logoFiltersMode = 'manual';
       var b = qs('bt-img-bright') ? Number(qs('bt-img-bright').value || 0) : 0;
       var c = qs('bt-img-contrast') ? Number(qs('bt-img-contrast').value || 0) : 0;
       var s = qs('bt-img-sat') ? Number(qs('bt-img-sat').value || 0) : 0;
@@ -697,6 +1044,9 @@
 
     function applyPresetFilter(name) {
       if (!state.logoObject || !window.fabric) return;
+
+      state.logoFilterPreset = name;
+      state.logoFiltersMode = 'preset';
 
       var filters = [];
       if (name === 'none') {
@@ -746,6 +1096,7 @@
 
     function resetImageFilters() {
       dbg('image_filters_reset', { pid: pid });
+      state.logoFiltersMode = 'preset';
       applyPresetFilter('none');
       if (qs('bt-img-opacity')) qs('bt-img-opacity').value = '1';
       applyLogoOpacity();
@@ -777,13 +1128,44 @@
           state.canvas.requestRenderAll();
 
           var list = qs('bt-uploads-list');
-          if (list) list.innerHTML = '<div>' + file.name + '</div>';
+          if (list) list.innerHTML = '<div style="overflow-wrap:anywhere; word-break:break-word;">' + file.name + '</div>';
         }, { crossOrigin: 'anonymous' });
       };
       reader.readAsDataURL(file);
     }
 
-    function save() {
+    function getProductAmount() {
+      try {
+        var byName = document.querySelector('input[name="product_data[' + pid + '][amount]"]');
+        if (byName && byName.value) {
+          var v1 = parseFloat(byName.value);
+          if (isFinite(v1) && v1 > 0) return v1;
+        }
+        var byId = document.getElementById('qty_count_' + pid);
+        if (byId && byId.value) {
+          var v2 = parseFloat(byId.value);
+          if (isFinite(v2) && v2 > 0) return v2;
+        }
+      } catch (e) {}
+      return 1;
+    }
+
+    function buildDispatchUrl(dispatch, params) {
+      var qs2 = [];
+      for (var k in (params || {})) {
+        if (!params.hasOwnProperty(k)) continue;
+        qs2.push(encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k])));
+      }
+      var url = dispatch + (qs2.length ? ('?' + qs2.join('&')) : '');
+      try {
+        if (window.Tygh && window.Tygh.fn_url) {
+          return window.Tygh.fn_url(url);
+        }
+      } catch (e) {}
+      return url;
+    }
+
+    function save(onSuccess) {
       if (!state.canvas || !cfg.urls || !cfg.urls.save) return;
       dbg('save_click', { pid: pid, hasText: !!state.textObject, hasLogo: !!state.logoObject, hasFile: !!state.lastLogoFile });
       setStatus(statusEl, 'Сохранение...', false);
@@ -803,8 +1185,16 @@
         fontFamily: state.textObject.fontFamily,
         fontSize: state.textObject.fontSize,
         fill: state.textObject.fill,
-        opacity: state.textObject.opacity
+        opacity: state.textObject.opacity,
+        originX: state.textObject.originX,
+        originY: state.textObject.originY
       } : {}));
+
+      var brightEl = qs('bt-img-bright');
+      var contrastEl = qs('bt-img-contrast');
+      var satEl = qs('bt-img-sat');
+
+      var wantManual = (state.logoFiltersMode === 'manual');
 
       fd.append('logo_params', JSON.stringify(state.logoObject ? {
         left: state.logoObject.left,
@@ -812,7 +1202,14 @@
         scaleX: state.logoObject.scaleX,
         scaleY: state.logoObject.scaleY,
         angle: state.logoObject.angle,
-        opacity: state.logoObject.opacity
+        opacity: state.logoObject.opacity,
+        filters: {
+          preset: state.logoFilterPreset || 'none',
+          // Store numeric filters only if sliders exist; otherwise keep null to avoid overriding preset on restore.
+          brightness: (wantManual && brightEl) ? Number(brightEl.value || 0) : null,
+          contrast: (wantManual && contrastEl) ? Number(contrastEl.value || 0) : null,
+          saturation: (wantManual && satEl) ? Number(satEl.value || 0) : null
+        }
       } : {}));
 
       var useUpload = qs('bt-use-upload') ? qs('bt-use-upload').checked : true;
@@ -835,7 +1232,26 @@
       fd.append('preview_png', preview);
 
       fetch(cfg.urls.save, { method: 'POST', body: fd, credentials: 'same-origin' })
-          .then(function (r) { return r.json(); })
+          .then(function (r) {
+            return r.text().then(function (txt) {
+              var ct = '';
+              try { ct = r.headers && r.headers.get ? (r.headers.get('content-type') || '') : ''; } catch (e0) {}
+              var json = null;
+              try {
+                json = txt ? JSON.parse(txt) : null;
+              } catch (e1) {
+                var err = new Error('Non-JSON response');
+                err._bt = { status: r.status, ok: r.ok, contentType: ct, snippet: String(txt || '').slice(0, 350) };
+                throw err;
+              }
+              if (!r.ok) {
+                var err2 = new Error('HTTP ' + r.status);
+                err2._bt = { status: r.status, ok: r.ok, contentType: ct, snippet: String(txt || '').slice(0, 350), json: json };
+                throw err2;
+              }
+              return json;
+            });
+          })
           .then(function (json) {
             if (!json || !json.ok) {
               dbg('save_failed', { pid: pid, response: json });
@@ -844,10 +1260,31 @@
             }
             dbg('save_ok', { pid: pid, item_id: json.item_id });
             setStatus(statusEl, 'Сохранено (item_id=' + json.item_id + ')', false);
+            if (typeof onSuccess === 'function') {
+              try { onSuccess(json); } catch (e0) {}
+            } else {
+              // Update product image to saved preview (authorized only)
+              try { applyPreviewToProductImage({ cacheBust: true }); } catch (e1) {}
+              // Close panel to restore hidden UI blocks
+              setTimeout(function () { showPanel(false); }, 250);
+            }
           })
           .catch(function (e) {
             dbg('save_request_error', { pid: pid, message: (e && e.message) ? e.message : e });
-            setStatus(statusEl, 'Ошибка запроса: ' + (e && e.message ? e.message : e), true);
+            try {
+              if (e && e._bt && e._bt.status) {
+                // Friendly message when addon/controller is disabled/unavailable.
+                if (e._bt.status === 404 || e._bt.status === 403 || e._bt.status === 302 || e._bt.status === 301) {
+                  setStatus(statusEl, 'Функция временно недоступна (аддон отключен администратором).', true);
+                } else {
+                  setStatus(statusEl, 'Ошибка запроса (' + e._bt.status + '): ' + (e._bt.contentType || '') + '<br />' + (e._bt.snippet || ''), true);
+                }
+              } else {
+                setStatus(statusEl, 'Ошибка запроса: ' + (e && e.message ? e.message : e), true);
+              }
+            } catch (e0) {
+              setStatus(statusEl, 'Ошибка запроса: ' + (e && e.message ? e.message : e), true);
+            }
           });
     }
 
@@ -858,6 +1295,18 @@
     btnClose && btnClose.addEventListener('click', function () { showPanel(false); });
     btnAddText && btnAddText.addEventListener('click', function () { initCanvas(); upsertText(); });
     btnSave && btnSave.addEventListener('click', function () { initCanvas(); save(); });
+    btnAddToCart && btnAddToCart.addEventListener('click', function () {
+      initCanvas();
+      save(function () {
+        // Close first, then go add to cart
+        setTimeout(function () {
+          try { showPanel(false); } catch (e0) {}
+          var amount = getProductAmount();
+          var url = buildDispatchUrl('checkout.add', { product_id: pid, amount: amount });
+          window.location.href = url;
+        }, 150);
+      });
+    });
     upload && upload.addEventListener('change', function (e) { initCanvas(); onUploadChange(e); });
 
     var tText = qs('bt-text');
@@ -896,6 +1345,9 @@
     reset && reset.addEventListener('click', function () { resetImageFilters(); });
 
     setActivePane('text');
+
+    // If user already has saved preview for this product - replace main image right away
+    try { applyPreviewToProductImage({ cacheBust: false }); } catch (e0) {}
   }
 
   function initAllOnDomReady() {
@@ -923,6 +1375,20 @@
   } else {
     initAllOnDomReady();
   }
+
+  // Apply preview replacement for catalog/minicart images (authorized user) on initial load
+  try { btReplaceCatalogImages(document); } catch (e0) {}
+
+  // And after CS-Cart AJAX renders blocks
+  try {
+    if (window.Tygh && window.Tygh.$ && window.Tygh.$.ceEvent) {
+      window.Tygh.$.ceEvent('on', 'ce.commoninit', function (ctx) {
+        try {
+          btReplaceCatalogImages(ctx && ctx[0] ? ctx[0] : (ctx || document));
+        } catch (e1) {}
+      });
+    }
+  } catch (e2) {}
 
   // If config appears after this script, retry a few times
   (function retryInit(triesLeft) {

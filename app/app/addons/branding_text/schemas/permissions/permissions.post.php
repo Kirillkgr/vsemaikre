@@ -30,6 +30,9 @@ $schema['branding_text'] = array(
         'preview' => array(
             'permissions' => true,
         ),
+        'preview_for_product' => array(
+            'permissions' => true,
+        ),
         'ping' => array(
             'permissions' => true,
         ),

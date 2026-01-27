@@ -28,6 +28,9 @@ $schema['branding_text'] = [
         'preview' => [
             'permissions' => true,
         ],
+        'preview_for_product' => [
+            'permissions' => true,
+        ],
         'ping' => [
             'permissions' => true,
         ],

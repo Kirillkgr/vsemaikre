@@ -61,6 +61,51 @@ function fn_branding_text_save_data_url_png($data_url, $abs_path)
     return file_put_contents($abs_path, $bin) !== false;
 }
 
+function fn_branding_text_resize_png_gd($src_abs, $dst_abs, $w, $h)
+{
+    if (!$w || !$h) {
+        return false;
+    }
+    if (!function_exists('imagecreatefrompng') || !function_exists('imagecreatetruecolor')) {
+        return false;
+    }
+
+    $src = @imagecreatefrompng($src_abs);
+    if (!$src) {
+        return false;
+    }
+
+    $dst = imagecreatetruecolor($w, $h);
+    if (!$dst) {
+        imagedestroy($src);
+        return false;
+    }
+
+    // preserve alpha
+    imagealphablending($dst, false);
+    imagesavealpha($dst, true);
+    $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+    imagefilledrectangle($dst, 0, 0, $w, $h, $transparent);
+
+    $sw = imagesx($src);
+    $sh = imagesy($src);
+
+    // contain (keep aspect ratio) + center
+    $scale = min($w / max(1, $sw), $h / max(1, $sh));
+    $nw = (int) round($sw * $scale);
+    $nh = (int) round($sh * $scale);
+    $dx = (int) floor(($w - $nw) / 2);
+    $dy = (int) floor(($h - $nh) / 2);
+
+    imagecopyresampled($dst, $src, $dx, $dy, 0, 0, $nw, $nh, $sw, $sh);
+    $ok = imagepng($dst, $dst_abs);
+
+    imagedestroy($dst);
+    imagedestroy($src);
+
+    return (bool) $ok;
+}
+
 // Простая проверка доступности контроллера: если нет режима — выведем OK и остановим
 if ($mode === 'constructor') {
     $product_id = isset($_REQUEST['product_id']) ? (int) $_REQUEST['product_id'] : 0;
@@ -334,9 +379,11 @@ if ($mode === 'constructor') {
     $abs_preview_dir = $files_root . '/' . $rel_preview_dir;
     fn_branding_text_ensure_dir($abs_preview_dir);
 
+    // Stable per-owner preview path: overwrite on each save.
     $preview_rel_path = '';
     if ($preview_png) {
-        $base = 'preview_' . ($user_id ? ('u' . $user_id) : ('s' . substr($session_id, 0, 8))) . '_' . $product_id . '_' . time() . '_' . mt_rand(1000, 9999);
+        $owner_key = $user_id ? ('u' . $user_id) : ('s' . substr($session_id, 0, 16));
+        $base = 'preview_' . $owner_key . '_p' . $product_id;
         $preview_rel_path = $rel_preview_dir . '/' . $base . '.png';
         $preview_abs_path = $files_root . '/' . $preview_rel_path;
         if (!fn_branding_text_save_data_url_png($preview_png, $preview_abs_path)) {
@@ -494,6 +541,80 @@ if ($mode === 'constructor') {
     if (!is_file($abs)) {
         http_response_code(404);
         exit;
+    }
+
+    header('Content-Type: image/png');
+    readfile($abs);
+    exit;
+} elseif ($mode === 'preview_for_product') {
+    /** @var array $auth */
+    global $auth;
+    list($company_id, $user_id, $session_id) = fn_branding_text_get_owner_context($auth);
+
+    $product_id = isset($_REQUEST['product_id']) ? (int) $_REQUEST['product_id'] : 0;
+    if (!$product_id) {
+        http_response_code(404);
+        exit;
+    }
+
+    if (!fn_branding_text_table_exists('branding_text_items')) {
+        http_response_code(404);
+        exit;
+    }
+
+    $w = isset($_REQUEST['w']) ? (int) $_REQUEST['w'] : 0;
+    $h = isset($_REQUEST['h']) ? (int) $_REQUEST['h'] : 0;
+    if ($w < 0) { $w = 0; }
+    if ($h < 0) { $h = 0; }
+    if ($w > 2000) { $w = 2000; }
+    if ($h > 2000) { $h = 2000; }
+
+    $preview = db_get_field(
+        'SELECT preview_path FROM ?:branding_text_items'
+        . ' WHERE company_id = ?i AND product_id = ?i'
+        . ' AND ((user_id = ?i AND ?i <> 0) OR (session_id = ?s AND ?i = 0))'
+        . ' ORDER BY updated_at DESC',
+        $company_id,
+        $product_id,
+        $user_id,
+        $user_id,
+        $session_id,
+        $user_id
+    );
+    if (!$preview) {
+        http_response_code(404);
+        exit;
+    }
+
+    $files_root = fn_branding_text_get_files_root_dir();
+    $abs = $files_root . '/' . ltrim($preview, '/');
+    if (!is_file($abs)) {
+        http_response_code(404);
+        exit;
+    }
+
+    // If size requested, generate cached resized version (PNG).
+    if ($w && $h) {
+        $rel_cache_dir = 'branding_text/previews_cache';
+        $abs_cache_dir = $files_root . '/' . $rel_cache_dir;
+        fn_branding_text_ensure_dir($abs_cache_dir);
+
+        $mtime = @filemtime($abs);
+        $cache_key = md5($preview . '|' . (string) $mtime . '|' . $w . 'x' . $h);
+        $cache_rel = $rel_cache_dir . '/' . $cache_key . '_' . $w . 'x' . $h . '.png';
+        $cache_abs = $files_root . '/' . $cache_rel;
+
+        if (!is_file($cache_abs)) {
+            // best-effort cache build
+            fn_branding_text_resize_png_gd($abs, $cache_abs, $w, $h);
+        }
+
+        if (is_file($cache_abs)) {
+            header('Content-Type: image/png');
+            readfile($cache_abs);
+            exit;
+        }
+        // fallback to original
     }
 
     header('Content-Type: image/png');
