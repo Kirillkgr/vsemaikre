@@ -3,9 +3,10 @@ name: branding_text release
 on:
   workflow_dispatch:
   push:
-    branches:
-      - master-cs-cart
     paths:
+      - 'app/app/addons/branding_text/**'
+      - 'app/js/addons/branding_text/**'
+      - 'app/design/themes/**/templates/addons/branding_text/**'
       - 'app/app/addons/branding_text/addon.xml'
 
 permissions:
