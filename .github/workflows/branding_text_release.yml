@@ -1,5 +1,6 @@
 name: branding_text release
 
+
 on:
   workflow_dispatch:
   push:
