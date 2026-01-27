@@ -22,6 +22,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fetch tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
       - name: Read addon version
         id: ver
         shell: bash
@@ -40,18 +46,25 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
 
-      - name: Create tag if missing (auto)
+      - name: Check if release already exists (tag present)
+        id: tagcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag (auto)
+        if: steps.tagcheck.outputs.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
           tag="${{ steps.ver.outputs.tag }}"
           sha="${GITHUB_SHA}"
-
-          # If tag already exists, we do NOT move it automatically.
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            echo "Tag $tag already exists. Bump <version> in addon.xml to create a new release." >&2
-            exit 1
-          fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -60,6 +73,7 @@ jobs:
           git push origin "refs/tags/$tag"
 
       - name: Build addon zip (no bump)
+        if: steps.tagcheck.outputs.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -67,6 +81,7 @@ jobs:
           scripts/build-addon.sh --no-bump
 
       - name: Publish GitHub Release
+        if: steps.tagcheck.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
@@ -78,3 +93,9 @@ jobs:
           generate_release_notes: false
           files: |
             addon/branding_text-${{ steps.ver.outputs.version }}.zip
+
+      - name: Skip notice
+        if: steps.tagcheck.outputs.skip == 'true'
+        shell: bash
+        run: |
+          echo "SKIP: Release not created because tag ${{ steps.ver.outputs.tag }} already exists (version unchanged)."
