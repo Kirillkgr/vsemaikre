@@ -8,6 +8,8 @@
     })(Tygh, Tygh.$);
 </script>
 
-{script src="js/addons/branding_text/bt_core.js"}
-{script src="js/addons/branding_text/bt_preview.js"}
-{script src="js/addons/branding_text/designer.js"}
+{assign var="bt_ver" value="0.0.9"}
+{script src="js/addons/branding_text/bt_core.js?v=`$bt_ver`"}
+{if $smarty.request.bt_constructor == "Y"}
+    {script src="js/addons/branding_text/designer.js?v=`$bt_ver`"}
+{/if}

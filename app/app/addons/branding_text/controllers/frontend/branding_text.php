@@ -2,6 +2,7 @@
 if (!defined('BOOTSTRAP')) { die('Access denied'); }
 
 use Tygh\Registry;
+use Tygh\Session;
 
 function fn_branding_text_json_response($payload, $status = 200)
 {
@@ -13,8 +14,36 @@ function fn_branding_text_json_response($payload, $status = 200)
 
 function fn_branding_text_get_owner_context($auth)
 {
+    if (!is_array($auth)) {
+        $auth = [];
+    }
+    if (empty($auth['user_id']) && isset(\Tygh\Tygh::$app['session']['auth']) && is_array(\Tygh\Tygh::$app['session']['auth'])) {
+        $auth = \Tygh\Tygh::$app['session']['auth'];
+    }
+
     $user_id = !empty($auth['user_id']) ? (int) $auth['user_id'] : 0;
-    $session_id = session_id();
+    $session_id = '';
+    if ($user_id === 0) {
+        $guest_id = !empty($_COOKIE['bt_guest_id']) ? (string) $_COOKIE['bt_guest_id'] : '';
+        if (!$guest_id && isset(\Tygh\Tygh::$app['session']['bt_guest_id'])) {
+            $guest_id = (string) \Tygh\Tygh::$app['session']['bt_guest_id'];
+        }
+        if (!$guest_id) {
+            try {
+                $guest_id = 'btg_' . bin2hex(random_bytes(16));
+            } catch (\Exception $e) {
+                $guest_id = 'btg_' . md5(uniqid('', true));
+            }
+        }
+
+        @setcookie('bt_guest_id', $guest_id, time() + 60 * 60 * 24 * 30, '/');
+        if (isset(\Tygh\Tygh::$app['session'])) {
+            \Tygh\Tygh::$app['session']['bt_guest_id'] = $guest_id;
+        }
+        $session_id = $guest_id;
+    } else {
+        $session_id = Session::getId();
+    }
     $company_id = (int) Registry::get('runtime.company_id');
 
     return [$company_id, $user_id, $session_id];
@@ -116,6 +145,7 @@ if ($mode === 'constructor') {
     /** @var array $auth */
     global $auth;
     list($company_id, $user_id, $session_id) = fn_branding_text_get_owner_context($auth);
+    $company_ids = [$company_id, 0];
 
     $product_id = isset($_REQUEST['product_id']) ? (int) $_REQUEST['product_id'] : 0;
     $product_type = isset($_REQUEST['product_type']) ? (string) $_REQUEST['product_type'] : '';
@@ -138,15 +168,24 @@ if ($mode === 'constructor') {
 
     $item = null;
     if ($product_id) {
-        $item = db_get_row(
-            'SELECT * FROM ?:branding_text_items WHERE company_id = ?i AND product_id = ?i AND ((user_id = ?i AND ?i <> 0) OR (session_id = ?s AND ?i = 0)) ORDER BY updated_at DESC',
-            $company_id,
-            $product_id,
-            $user_id,
-            $user_id,
-            $session_id,
-            $user_id
-        );
+        if ($user_id > 0) {
+            $item = db_get_row(
+                'SELECT * FROM ?:branding_text_items WHERE company_id IN (?n) AND product_id = ?i AND (user_id = ?i OR session_id = ?s) ORDER BY updated_at DESC',
+                $company_ids,
+                $product_id,
+                $user_id,
+                $session_id
+            );
+        } else {
+            $legacy_session_id = Session::getId();
+            $session_ids = array_values(array_unique(array_filter([(string) $session_id, (string) $legacy_session_id])));
+            $item = db_get_row(
+                'SELECT * FROM ?:branding_text_items WHERE company_id IN (?n) AND product_id = ?i AND session_id IN (?n) ORDER BY updated_at DESC',
+                $company_ids,
+                $product_id,
+                $session_ids
+            );
+        }
     }
 
     fn_branding_text_json_response([
@@ -227,6 +266,7 @@ if ($mode === 'constructor') {
     /** @var array $auth */
     global $auth;
     list($company_id, $user_id, $session_id) = fn_branding_text_get_owner_context($auth);
+    $company_ids = [$company_id, 0];
 
     if (!fn_branding_text_table_exists('branding_text_uploads')) {
         fn_branding_text_json_response(['ok' => true, 'product_id' => (int) (isset($_REQUEST['product_id']) ? $_REQUEST['product_id'] : 0), 'uploads' => []]);
@@ -234,18 +274,29 @@ if ($mode === 'constructor') {
 
     $product_id = isset($_REQUEST['product_id']) ? (int) $_REQUEST['product_id'] : 0;
 
-    $rows = db_get_array(
-        'SELECT upload_id, original_filename, mime_type, size, path_preview, created_at'
-        . ' FROM ?:branding_text_uploads'
-        . ' WHERE company_id = ?i AND ((user_id = ?i AND ?i <> 0) OR (session_id = ?s AND ?i = 0))'
-        . ' ORDER BY created_at DESC'
-        . ' LIMIT 50',
-        $company_id,
-        $user_id,
-        $user_id,
-        $session_id,
-        $user_id
-    );
+    if ($user_id > 0) {
+        $rows = db_get_array(
+            'SELECT upload_id, original_filename, mime_type, size, path_preview, created_at'
+            . ' FROM ?:branding_text_uploads'
+            . ' WHERE company_id IN (?n) AND user_id = ?i'
+            . ' ORDER BY created_at DESC'
+            . ' LIMIT 50',
+            $company_ids,
+            $user_id
+        );
+    } else {
+        $legacy_session_id = Session::getId();
+        $session_ids = array_values(array_unique(array_filter([(string) $session_id, (string) $legacy_session_id])));
+        $rows = db_get_array(
+            'SELECT upload_id, original_filename, mime_type, size, path_preview, created_at'
+            . ' FROM ?:branding_text_uploads'
+            . ' WHERE company_id IN (?n) AND session_id IN (?n)'
+            . ' ORDER BY created_at DESC'
+            . ' LIMIT 50',
+            $company_ids,
+            $session_ids
+        );
+    }
 
     fn_branding_text_json_response([
         'ok' => true,
@@ -265,6 +316,7 @@ if ($mode === 'constructor') {
     /** @var array $auth */
     global $auth;
     list($company_id, $user_id, $session_id) = fn_branding_text_get_owner_context($auth);
+    $company_ids = [$company_id, 0];
 
     if (!fn_branding_text_table_exists('branding_text_uploads')) {
         http_response_code(404);
@@ -277,16 +329,25 @@ if ($mode === 'constructor') {
         exit;
     }
 
-    $row = db_get_row(
-        'SELECT path_preview, mime_type FROM ?:branding_text_uploads'
-        . ' WHERE upload_id = ?i AND company_id = ?i AND ((user_id = ?i AND ?i <> 0) OR (session_id = ?s AND ?i = 0))',
-        $upload_id,
-        $company_id,
-        $user_id,
-        $user_id,
-        $session_id,
-        $user_id
-    );
+    if ($user_id > 0) {
+        $row = db_get_row(
+            'SELECT path_preview, mime_type FROM ?:branding_text_uploads'
+            . ' WHERE upload_id = ?i AND company_id IN (?n) AND user_id = ?i',
+            $upload_id,
+            $company_ids,
+            $user_id
+        );
+    } else {
+        $legacy_session_id = Session::getId();
+        $session_ids = array_values(array_unique(array_filter([(string) $session_id, (string) $legacy_session_id])));
+        $row = db_get_row(
+            'SELECT path_preview, mime_type FROM ?:branding_text_uploads'
+            . ' WHERE upload_id = ?i AND company_id IN (?n) AND session_id IN (?n)',
+            $upload_id,
+            $company_ids,
+            $session_ids
+        );
+    }
     if (!$row || empty($row['path_preview'])) {
         http_response_code(404);
         exit;
@@ -427,6 +488,10 @@ if ($mode === 'constructor') {
         $item_id = (int) db_query('INSERT INTO ?:branding_text_items ?e', $data);
     }
 
+    if (isset(\Tygh\Tygh::$app['session'])) {
+        \Tygh\Tygh::$app['session']['bt_cache_bust'] = TIME;
+    }
+
     fn_branding_text_json_response([
         'ok' => true,
         'item_id' => (int) $item_id,
@@ -549,7 +614,13 @@ if ($mode === 'constructor') {
 } elseif ($mode === 'preview_for_product') {
     /** @var array $auth */
     global $auth;
+
+    if (!is_array($auth)) {
+        $auth = [];
+    }
+
     list($company_id, $user_id, $session_id) = fn_branding_text_get_owner_context($auth);
+    $company_ids = [$company_id, 0];
 
     $product_id = isset($_REQUEST['product_id']) ? (int) $_REQUEST['product_id'] : 0;
     if (!$product_id) {
@@ -558,6 +629,9 @@ if ($mode === 'constructor') {
     }
 
     if (!fn_branding_text_table_exists('branding_text_items')) {
+        fn_branding_text_debug_log('preview_for_product_404_no_table', [
+            'product_id' => $product_id,
+        ]);
         http_response_code(404);
         exit;
     }
@@ -569,19 +643,37 @@ if ($mode === 'constructor') {
     if ($w > 2000) { $w = 2000; }
     if ($h > 2000) { $h = 2000; }
 
-    $preview = db_get_field(
-        'SELECT preview_path FROM ?:branding_text_items'
-        . ' WHERE company_id = ?i AND product_id = ?i'
-        . ' AND ((user_id = ?i AND ?i <> 0) OR (session_id = ?s AND ?i = 0))'
-        . ' ORDER BY updated_at DESC',
-        $company_id,
-        $product_id,
-        $user_id,
-        $user_id,
-        $session_id,
-        $user_id
-    );
+    if ($user_id > 0) {
+        $preview = db_get_field(
+            'SELECT preview_path FROM ?:branding_text_items'
+            . ' WHERE company_id IN (?n) AND product_id = ?i'
+            . ' AND (user_id = ?i OR session_id = ?s)'
+            . ' ORDER BY updated_at DESC',
+            $company_ids,
+            $product_id,
+            $user_id,
+            $session_id
+        );
+    } else {
+        $legacy_session_id = Session::getId();
+        $session_ids = array_values(array_unique(array_filter([(string) $session_id, (string) $legacy_session_id])));
+        $preview = db_get_field(
+            'SELECT preview_path FROM ?:branding_text_items'
+            . ' WHERE company_id IN (?n) AND product_id = ?i'
+            . ' AND session_id IN (?n)'
+            . ' ORDER BY updated_at DESC',
+            $company_ids,
+            $product_id,
+            $session_ids
+        );
+    }
     if (!$preview) {
+        fn_branding_text_debug_log('preview_for_product_404_no_preview', [
+            'product_id' => $product_id,
+            'company_id' => $company_id,
+            'user_id' => $user_id,
+            'session_id' => substr((string) $session_id, 0, 8),
+        ]);
         http_response_code(404);
         exit;
     }
@@ -589,6 +681,11 @@ if ($mode === 'constructor') {
     $files_root = fn_branding_text_get_files_root_dir();
     $abs = $files_root . '/' . ltrim($preview, '/');
     if (!is_file($abs)) {
+        fn_branding_text_debug_log('preview_for_product_404_no_file', [
+            'product_id' => $product_id,
+            'preview_path' => $preview,
+            'abs' => $abs,
+        ]);
         http_response_code(404);
         exit;
     }
@@ -623,5 +720,39 @@ if ($mode === 'constructor') {
 } elseif ($mode === 'ping') {
     header('Content-Type: text/plain; charset=utf-8');
     echo 'branding_text controller OK';
+    exit;
+} elseif ($mode === 'debug_ping') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $var_dir = Registry::get('config.dir.var');
+    $var_dir = rtrim((string) $var_dir, '/\\');
+    $file = $var_dir . '/branding_text_debug.log';
+
+    $dir_ok = is_dir($var_dir);
+    $dir_writable = $dir_ok ? is_writable($var_dir) : false;
+    $written = false;
+    $err = '';
+
+    try {
+        $payload = json_encode([
+            'ts' => date('c'),
+            'mode' => 'debug_ping',
+        ], JSON_UNESCAPED_UNICODE) . "\n";
+        $written = @file_put_contents($file, $payload, FILE_APPEND) !== false;
+    } catch (Exception $e) {
+        $err = $e->getMessage();
+    }
+
+    echo json_encode([
+        'ok' => true,
+        'var_dir' => $var_dir,
+        'var_dir_exists' => $dir_ok,
+        'var_dir_writable' => $dir_writable,
+        'log_file' => $file,
+        'log_file_exists' => is_file($file),
+        'log_file_writable' => is_file($file) ? is_writable($file) : null,
+        'write_attempt_ok' => $written,
+        'last_error' => $err,
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }

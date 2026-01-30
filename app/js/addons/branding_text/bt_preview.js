@@ -53,7 +53,7 @@
   }
 
   function extractPidFromListingContext(linkEl, imgEl) {
-    var pid = 0;
+    let pid;
     // 1) href with query
     pid = parsePidFromHref(linkEl && linkEl.getAttribute ? linkEl.getAttribute('href') : '');
     if (pid) return pid;
@@ -87,20 +87,24 @@
     // 4) id patterns like list_image_update_prefix123
     try {
       var host = null;
-      if (linkEl && linkEl.closest) host = linkEl.closest('[id]');
-      if (!host && imgEl && imgEl.closest) host = imgEl.closest('[id]');
+      // Be strict here: many elements contain random ids with digits (uniqid, image ids, block ids) which are NOT product_id.
+      // Accept only known CS-Cart patterns that commonly embed product_id.
+      if (linkEl && linkEl.closest) host = linkEl.closest('[id^="det_img_"], [id^="product_"]');
+      if (!host && imgEl && imgEl.closest) host = imgEl.closest('[id^="det_img_"], [id^="product_"]');
       if (host && host.id) {
-        pid = parsePidLoose(host.id);
-        if (pid) return pid;
+        var id = String(host.id);
+        var mDet = id.match(/^det_img_(\d+)$/);
+        if (mDet && mDet[1]) {
+          pid = parseInt(mDet[1], 10) || 0;
+          if (pid) return pid;
+        }
+        var mProd = id.match(/^product_(\d+)$/);
+        if (mProd && mProd[1]) {
+          pid = parseInt(mProd[1], 10) || 0;
+          if (pid) return pid;
+        }
       }
     } catch (e4) {}
-
-    // 5) SEO href fallback
-    try {
-      var href = linkEl && linkEl.getAttribute ? linkEl.getAttribute('href') : '';
-      pid = parsePidLoose(href);
-      if (pid) return pid;
-    } catch (e5) {}
 
     return 0;
   }
@@ -165,9 +169,39 @@
     }
     var url = buildUrl(g.previewForProduct, params);
 
+    // If image is wrapped by CS-Cart previewer link (zoom/lightbox), also update the large image href.
+    // common/image.tpl: <a class="... cm-previewer ty-previewer" href="detailed_image_path">...
+    var shouldUpdatePreviewerLink = false;
+    try {
+      var cls = (linkEl.className || '');
+      if (typeof cls === 'string' && (cls.indexOf('cm-previewer') >= 0 || cls.indexOf('ty-previewer') >= 0 || cls.indexOf('cm-image-previewer') >= 0)) {
+        shouldUpdatePreviewerLink = true;
+      }
+    } catch (e00) {}
+    // Fallback: if link has data-ca-image-width/height, it's a previewer.
+    try {
+      if (!shouldUpdatePreviewerLink && linkEl.getAttribute) {
+        if (linkEl.getAttribute('data-ca-image-width') || linkEl.getAttribute('data-ca-image-height')) {
+          shouldUpdatePreviewerLink = true;
+        }
+      }
+    } catch (e01) {}
+
+    var largeParams = { product_id: pid, _t: 0, w: 1200, h: 1200 };
+    var largeUrl = buildUrl(g.previewForProduct, largeParams);
+
     // Keep original src for fallback.
     origSrc = imgEl.getAttribute('data-bt-orig-src') || imgEl.src;
     imgEl.setAttribute('data-bt-orig-src', origSrc);
+
+    // Keep original previewer href for fallback.
+    var origHref = '';
+    try {
+      if (shouldUpdatePreviewerLink) {
+        origHref = linkEl.getAttribute('data-bt-orig-href') || linkEl.getAttribute('href') || '';
+        if (origHref) linkEl.setAttribute('data-bt-orig-href', origHref);
+      }
+    } catch (e02) {}
 
     // Avoid console 404 spam: precheck by HEAD and only swap if preview exists.
     window.__BT_PREVIEW_HEAD__ = window.__BT_PREVIEW_HEAD__ || {};
@@ -188,7 +222,30 @@
       imgEl.src = url;
       imgEl.onerror = function () {
         imgEl.src = origSrc;
+        try {
+          if (shouldUpdatePreviewerLink && origHref) {
+            linkEl.setAttribute('href', origHref);
+          }
+        } catch (e10) {}
       };
+
+      // Update previewer link to use large branded preview (so zoom shows detailed branded image).
+      try {
+        if (shouldUpdatePreviewerLink) {
+          linkEl.setAttribute('href', largeUrl);
+          linkEl.setAttribute('data-ca-image-width', String(largeParams.w));
+          linkEl.setAttribute('data-ca-image-height', String(largeParams.h));
+          dbgSafe('listing_previewer_href_swap', { pid: pid, href: largeUrl });
+        }
+      } catch (e11) {}
+
+      // Keep generate_image lazy-load paths consistent when present.
+      try {
+        if (imgEl.getAttribute && imgEl.getAttribute('data-ca-image-path')) {
+          imgEl.setAttribute('data-ca-image-path', url);
+        }
+      } catch (e12) {}
+
       try { imgEl.setAttribute('data-bt-preview-applied', 'Y'); } catch (e0) {}
       dbgSafe('listing_swap', { pid: pid, url: url });
     });

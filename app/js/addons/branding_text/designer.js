@@ -8,6 +8,15 @@
     } catch (e0) {}
   }
 
+  try {
+    if (!window.__BT_DESIGNER_JS_VERSION__) {
+      window.__BT_DESIGNER_JS_VERSION__ = '2026-01-28-2';
+    }
+    if (window.console && typeof window.console.info === 'function') {
+      window.console.info('[branding_text] designer.js loaded v=' + window.__BT_DESIGNER_JS_VERSION__);
+    }
+  } catch (e1) {}
+
   dbg('designer_js_loaded', { readyState: document.readyState });
 
   function setStatus(el, text, isError) {
@@ -157,6 +166,29 @@
       opts = opts || {};
       if (!cfg || !cfg.urls || !cfg.urls.previewForProduct) return;
       if (!cfg.user_id) return; // replace only for authorized users
+
+      // Avoid HEAD 404 spam on product page: only try to replace image if this product was branded by this user.
+      // Exception: after save() we call with cacheBust=true and want retries so preview appears without refresh.
+      try {
+        if (!opts.cacheBust && window.btIsProductBranded && !window.btIsProductBranded(pid)) {
+          dbg('product_skip_not_branded', { pid: pid });
+          return;
+        }
+      } catch (e00) {}
+
+      // If server-side already rendered the branded preview, do not run HEAD checks again.
+      try {
+        var w0 = document.querySelector('.ty-product-img.cm-preview-wrapper') || document.querySelector('.ty-product-img');
+        if (w0) {
+          var l0 = w0.querySelector('a.cm-image-previewer, a.cm-previewer, a.ty-previewer, a#det_img_link_' + pid) || w0.querySelector('a[href]');
+          var i0 = l0 ? (l0.querySelector('img.ty-pict, img.cm-image, img') || null) : (w0.querySelector('img.ty-pict, img.cm-image, img') || null);
+          var s0 = i0 ? (i0.getAttribute('src') || i0.src || '') : '';
+          var h0 = l0 ? (l0.getAttribute('href') || '') : '';
+          if (!opts.cacheBust && (String(s0).indexOf('branding_text.preview_for_product') >= 0 || String(s0).indexOf('dispatch=branding_text.preview_for_product') >= 0 || String(h0).indexOf('branding_text.preview_for_product') >= 0 || String(h0).indexOf('dispatch=branding_text.preview_for_product') >= 0)) {
+            return;
+          }
+        }
+      } catch (e01) {}
 
       // Build preview URL (owner context is derived from session/auth on server)
       var url = buildUrlWithParams(cfg.urls.previewForProduct, {
@@ -588,13 +620,17 @@
 
     function showPanel(show) {
       if (!panel) return;
-      if (show && panel.style.display === 'block') {
+      // On server-rendered constructor page the panel can already be visible.
+      // In that case we still need to run initialization (mount into gallery, load state, etc.).
+      if (show && panel.style.display === 'block' && state.galleryEl) {
         dbg('panel_open_skip_already_open', { pid: pid });
         return;
       }
 
       panel.style.display = show ? 'block' : 'none';
-      if (btnOpen) btnOpen.style.display = show ? 'none' : '';
+      if (btnOpen && String(btnOpen.tagName || '').toUpperCase() !== 'A') {
+        btnOpen.style.display = show ? 'none' : '';
+      }
       dbg(show ? 'panel_open' : 'panel_close', { pid: pid });
       if (show) {
         hideRightColumnExtras();
@@ -614,9 +650,15 @@
       dbg('load_start', { pid: pid, url: url });
       fetchJson(url, { credentials: 'same-origin' })
           .then(function (json) {
-            if (!json || !json.ok || !json.item) {
+            if (!json || !json.ok) {
               dbg('load_failed', { pid: pid, response: json });
               setStatus(statusEl, 'Ошибка загрузки: ' + ((json && json.error) ? json.error : 'unknown'), true);
+              return;
+            }
+
+            if (!json.item) {
+              dbg('load_empty', { pid: pid });
+              setStatus(statusEl, 'Сохранённого брендирования нет', false);
               return;
             }
 
@@ -1080,7 +1122,27 @@
         if (!params.hasOwnProperty(k)) continue;
         qs2.push(encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k])));
       }
-      var url = dispatch + (qs2.length ? ('?' + qs2.join('&')) : '');
+      var base = dispatch;
+      // Ensure URL format works even when SEO/rewrite rules are not configured.
+      // CS-Cart always accepts index.php?dispatch=... URLs.
+      try {
+        if (typeof base === 'string') {
+          if (/^https?:\/\//i.test(base)) {
+            // leave absolute as-is
+          } else if (base.indexOf('index.php?') === 0 || base.indexOf('?dispatch=') === 0) {
+            // already in a safe format
+          } else if (base.indexOf('dispatch=') !== -1) {
+            // already has dispatch parameter somewhere
+          } else {
+            base = 'index.php?dispatch=' + base;
+          }
+        }
+      } catch (e0) {}
+
+      var url = base;
+      if (qs2.length) {
+        url += (base.indexOf('?') === -1 ? '?' : '&') + qs2.join('&');
+      }
       try {
         if (window.Tygh && window.Tygh.fn_url) {
           return window.Tygh.fn_url(url);
@@ -1190,8 +1252,14 @@
             } else {
               // Update product image to saved preview (authorized only)
               try { applyPreviewToProductImage({ cacheBust: true }); } catch (e1) {}
-              // Close panel to restore hidden UI blocks
-              setTimeout(function () { showPanel(false); }, 250);
+
+              // Hide constructor UI (server-side mode): go back to normal product page.
+              // This lets the customer immediately see the result without constructor panel.
+              try {
+                setTimeout(function () {
+                  window.location.href = buildDispatchUrl('products.view', { product_id: pid });
+                }, 250);
+              } catch (e2) {}
             }
           })
           .catch(function (e) {
@@ -1216,22 +1284,28 @@
     if (!btnOpen) dbg('warn_missing_btnOpen', { pid: pid });
     if (!panel) dbg('warn_missing_panel', { pid: pid });
     if (!stage) dbg('warn_missing_stage', { pid: pid });
-    btnOpen && btnOpen.addEventListener('click', function () { showPanel(true); });
-    btnClose && btnClose.addEventListener('click', function () { showPanel(false); });
+    // If buttons are rendered as links (server-side navigation), do not intercept them.
+    btnOpen && String(btnOpen.tagName || '').toUpperCase() !== 'A' && btnOpen.addEventListener('click', function () { showPanel(true); });
+    btnClose && String(btnClose.tagName || '').toUpperCase() !== 'A' && btnClose.addEventListener('click', function () { showPanel(false); });
     btnAddText && btnAddText.addEventListener('click', function () { initCanvas(); upsertText(); });
     btnSave && btnSave.addEventListener('click', function () { initCanvas(); save(); });
     btnAddToCart && btnAddToCart.addEventListener('click', function () {
       initCanvas();
       save(function () {
-        // Close first, then go add to cart
         setTimeout(function () {
-          try { showPanel(false); } catch (e0) {}
           var amount = getProductAmount();
           var url = buildDispatchUrl('checkout.add', { product_id: pid, amount: amount });
           window.location.href = url;
-        }, 150);
+        }, 250);
       });
     });
+
+    // If panel is already visible (server-side constructor page), run the open flow once.
+    try {
+      if (panel && panel.style && panel.style.display === 'block') {
+        showPanel(true);
+      }
+    } catch (e0) {}
     upload && upload.addEventListener('change', function (e) { initCanvas(); onUploadChange(e); });
 
     var tText = qs('bt-text');

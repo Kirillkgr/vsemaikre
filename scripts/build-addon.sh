@@ -83,9 +83,15 @@ mkdir -p "$TMP_DIR/js/addons/$ADDON_ID"
 # Theme templates (responsive)
 mkdir -p "$TMP_DIR/design/themes/responsive/templates/addons/$ADDON_ID"
 
+# Theme templates (bright_theme)
+mkdir -p "$TMP_DIR/design/themes/bright_theme/templates/addons/$ADDON_ID"
+
 # Potential future/optional paths (копируем если есть)
 mkdir -p "$TMP_DIR/design/themes/responsive/css/addons/$ADDON_ID"
 mkdir -p "$TMP_DIR/design/themes/responsive/media/images/addons/$ADDON_ID"
+
+mkdir -p "$TMP_DIR/design/themes/bright_theme/css/addons/$ADDON_ID"
+mkdir -p "$TMP_DIR/design/themes/bright_theme/media/images/addons/$ADDON_ID"
 
 # Copy addon code
 copy_dir_if_exists "$CS_DIR/app/addons/$ADDON_ID" "$TMP_DIR/app/addons/$ADDON_ID"
@@ -95,8 +101,44 @@ copy_dir_if_exists "$CS_DIR/design/themes/responsive/templates/addons/$ADDON_ID"
 copy_dir_if_exists "$CS_DIR/design/themes/responsive/css/addons/$ADDON_ID" "$TMP_DIR/design/themes/responsive/css/addons/$ADDON_ID"
 copy_dir_if_exists "$CS_DIR/design/themes/responsive/media/images/addons/$ADDON_ID" "$TMP_DIR/design/themes/responsive/media/images/addons/$ADDON_ID"
 
+copy_dir_if_exists "$CS_DIR/design/themes/bright_theme/templates/addons/$ADDON_ID" "$TMP_DIR/design/themes/bright_theme/templates/addons/$ADDON_ID"
+copy_dir_if_exists "$CS_DIR/design/themes/bright_theme/css/addons/$ADDON_ID" "$TMP_DIR/design/themes/bright_theme/css/addons/$ADDON_ID"
+copy_dir_if_exists "$CS_DIR/design/themes/bright_theme/media/images/addons/$ADDON_ID" "$TMP_DIR/design/themes/bright_theme/media/images/addons/$ADDON_ID"
+
 # Copy JS assets
 copy_dir_if_exists "$CS_DIR/js/addons/$ADDON_ID" "$TMP_DIR/js/addons/$ADDON_ID"
+
+# Verify critical files are present in package
+must_exist() {
+  local rel="$1"
+  if [[ ! -e "$TMP_DIR/$rel" ]]; then
+    echo "ERROR: missing in package: $rel" >&2
+    exit 1
+  fi
+}
+
+MUST_FILES=(
+  "app/addons/$ADDON_ID/addon.xml"
+  "app/addons/$ADDON_ID/init.php"
+  "app/addons/$ADDON_ID/func.php"
+  "app/addons/$ADDON_ID/controllers/frontend/branding_text.php"
+  "app/addons/$ADDON_ID/schemas/controllers/controllers.post.php"
+  "app/addons/$ADDON_ID/schemas/permissions/permissions.post.php"
+  "app/addons/$ADDON_ID/schemas/block_manager/blocks.post.php"
+  "js/addons/$ADDON_ID/bt_core.js"
+  "js/addons/$ADDON_ID/designer.js"
+  "js/addons/$ADDON_ID/bt_preview.js"
+  "js/addons/$ADDON_ID/vendor/fabric.min.js"
+  "design/themes/responsive/templates/addons/$ADDON_ID/hooks/index/scripts.post.tpl"
+  "design/themes/responsive/templates/addons/$ADDON_ID/views/branding_text/constructor.tpl"
+  "design/themes/bright_theme/templates/addons/$ADDON_ID/hooks/index/scripts.post.tpl"
+  "design/themes/bright_theme/templates/addons/$ADDON_ID/hooks/checkout/product_icon.override.tpl"
+  "design/themes/bright_theme/templates/addons/$ADDON_ID/hooks/checkout/minicart_product_info.override.tpl"
+)
+
+for f in "${MUST_FILES[@]}"; do
+  must_exist "$f"
+done
 
 # Create zip (overwrite)
 rm -f "$OUT_ZIP"

@@ -34,6 +34,9 @@ $schema['branding_text'] = [
         'ping' => [
             'permissions' => true,
         ],
+        'debug_ping' => [
+            'permissions' => true,
+        ],
     ],
 ];
 

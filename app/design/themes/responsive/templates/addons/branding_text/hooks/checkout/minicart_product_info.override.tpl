@@ -5,7 +5,7 @@
 {if $block.properties.products_links_type == "thumb"}
     <div class="ty-cart-items__list-item-image">
         <a href="{"products.view?product_id=`$product.product_id`"|fn_url}">
-            <img class="ty-pict cm-image" src="{$bt_fallback_url}" data-bt-preview-url="{$bt_preview_url}" data-bt-product-id="{$product.product_id}" width="40" height="40" style="width:40px; height:40px; max-width:40px; max-height:40px; object-fit:contain;" alt="{$product.product|default:fn_get_product_name($product.product_id)|escape}" onerror="this.onerror=null; this.src='{$bt_fallback_url|escape:'javascript'}'; this.style.width='40px'; this.style.height='40px'; this.style.maxWidth='40px'; this.style.maxHeight='40px'; this.style.objectFit='contain';" />
+            <img class="ty-pict cm-image" src="{$bt_preview_url}" data-bt-preview-url="{$bt_preview_url}" data-bt-product-id="{$product.product_id}" width="40" height="40" style="width:40px; height:40px; max-width:40px; max-height:40px; object-fit:contain;" alt="{$product.product|default:fn_get_product_name($product.product_id)|escape}" onerror="this.onerror=null; this.src='{$bt_fallback_url|escape:'javascript'}'; this.style.width='40px'; this.style.height='40px'; this.style.maxWidth='40px'; this.style.maxHeight='40px'; this.style.objectFit='contain';" />
         </a>
     </div>
 {/if}

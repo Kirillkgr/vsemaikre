@@ -1,109 +1,103 @@
-# vsemaikre — Vue 3 T‑shirt Constructor
+# vsemaikre — Vue 3 T‑shirt Constructor + CS‑Cart Branding Text Addon
 
-Короткая инструкция по установке, запуску и деплою. Стек: Vue 3 + Vite + Vue Router + Konva. Превью и состояние сохраняются в localStorage.
+Проект включает:
+- **Vue 3 конструктор футболок** (стек: Vue 3 + Vite + Vue Router + Konva). Состояние и превью сохраняются в localStorage.
+- **CS‑Cart аддон `branding_text`** — прототип плагина для брендирования товара на витрине (загрузка лого, текст, превью, подмена картинок для авторизованных и гостей).
 
-## Требования
+---
+
+## 1. Vue 3 конструктор (фронтенд)
+
+### Требования
 - Node.js 20 LTS (рекомендуется)
 - npm 9+
 
-Проверка версий:
-```
-node -v
-npm -v
-```
-
-## Установка
-- Если есть package-lock.json:
-```
+### Установка
+```bash
+# Если есть package-lock.json
 npm ci
-```
-- Если первый запуск (нет lock-файла):
-```
+# Если первый запуск
 npm install
 ```
 
-## Запуск локально (dev)
-```
+### Запуск локально (dev)
+```bash
 npm run dev
 ```
 Откройте ссылку из консоли (обычно http://localhost:5173/). HMR включён.
 
-## Сборка (prod)
-```
+### Сборка (prod)
+```bash
 npm run build
 ```
-Готовые файлы будут в папке dist/.
+Готовые файлы будут в папке `dist/`.
 
-## Локальный предпросмотр prod-сборки
-```
+### Локальный предпросмотр prod-сборки
+```bash
 npm run preview
 ```
-Откройте адрес из консоли (обычно http://localhost:4173/).
 
-## Ключевые возможности
+### Ключевые возможности конструктора
 - Загрузка и редактирование изображения (перетаскивание, масштаб, поворот, фильтры)
 - Клиппинг по контуру майки (destination-in), видимая зона печати
-- Редактируемый текст (ввод, цвет, размер, прозрачность, перемещение, масштаб, поворот), центрирование при первом появлении
+- Редактируемый текст (ввод, цвет, размер, прозрачность, перемещение, масштаб, поворот)
 - Полная реставрация состояния из localStorage, экспорт чистых превью 256 и 612
 
-## Деплой на GitHub Pages
-Проект содержит workflow .github/workflows/gh-pages.yml, который деплоит на Pages при push в master.
+---
 
-Шаги:
-1) Включите Pages: Settings → Pages → Source: GitHub Actions
-2) Закоммитьте и запушьте:
+## 2. CS‑Cart аддон `branding_text` (бэкенд)
+
+### Что делает аддон
+- **Конструктор на витрине**: кнопка в карточке товара открывает панель для брендирования (текст + логотип).
+- **Загрузка логотипов**: AJAX‑загрузка, превью, фильтры, параметры.
+- **Сохранение брендирования**: текст, параметры текста, логотип, PNG‑превью.
+- **Подмена картинок на витрине**: серверная замена стоковых изображений на брендированные превью для владельца (авторизованный или гость).
+- **Поддержка гостей**: стабильный временный идентификатор (`bt_guest_id`) в cookie/сессии, чтобы гость мог брендировать и видеть свои превью.
+- **Совместимость со старыми записями**: используется CS‑Cart session id (`...-1-C`) для поиска старых загрузок/брендингов.
+- **Кеширование**: персонализированный кеш блоков `products` по `user_id`/`bt_guest_id` и `bt_cache_bust` для мгновенного обновления превью после сохранения.
+- **Темы**: поддержка `responsive` и `bright_theme` (override-шаблоны для корзины/миникорзины).
+
+### Структура аддона
 ```
-git add .
-git commit -m "deploy"
-git push origin master
+app/app/addons/branding_text/
+├── addon.xml
+├── init.php
+├── func.php
+├── controllers/frontend/branding_text.php
+├── schemas/
+│   ├── controllers/controllers.post.php
+│   ├── permissions/permissions.post.php
+│   └── block_manager/blocks.post.php
+js/addons/branding_text/
+├── bt_core.js
+├── designer.js
+├── bt_preview.js
+└── vendor/fabric.min.js
+design/themes/
+├── responsive/templates/addons/branding_text/
+│   ├── hooks/index/scripts.post.tpl
+│   └── views/branding_text/constructor.tpl
+└── bright_theme/templates/addons/branding_text/
+    ├── hooks/index/scripts.post.tpl
+    └── hooks/checkout/
+        ├── product_icon.override.tpl
+        └── minicart_product_info.override.tpl
 ```
-3) Дождитесь успешного workflow. Сайт будет по адресу:
+
+### Установка аддона
+1) Скопировать `app/`, `js/`, `design/` в корень CS‑Cart.
+2) В админке CS‑Cart: Управление → Модули → Установить `branding_text`.
+3) Очистить кеш шаблонов и реестра.
+
+### Сборка аддона в zip
+```bash
+./scripts/build-addon.sh
 ```
-https://<user>.github.io/<repo>/
-```
+Архив будет в `addon/branding_text-*.zip`. Скрипт проверяет наличие всех критичных файлов и падает с ошибкой, если чего-то не хватает.
+
+---
 
 Примечания:
-- vite.config.js настраивает base динамически для корректной работы под /<repo>/
-- Добавлен SPA fallback 404.html, чтобы прямые ссылки не отдавали 404 на Pages
+- `vite.config.js` настраивает `base` динамически для корректной работы под `/<repo>/`
+- Добавлен SPA fallback `404.html`, чтобы прямые ссылки не отдавали 404 на Pages
 
-## Частые проблемы
-- Пустая страница на Pages → проверьте base в vite.config.js и что devtools отключены в проде
-- 404 на вложенных маршрутах → проверьте, что задеплоен 404.html (SPA fallback)
-# vsemaikre
-
-This template should help get you started developing with Vue 3 in Vite.
-
-## Recommended IDE Setup
-
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
-
-## Recommended Browser Setup
-
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
-npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
-npm run dev
-```
-
-### Compile and Minify for Production
-
-```sh
-npm run build
-```

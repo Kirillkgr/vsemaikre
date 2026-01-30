@@ -3,7 +3,7 @@
   <id>branding_text</id>
   <name>Branding Text</name>
   <description>MVP конструктора текстового брендирования (страница конструктора + кнопка в карточке товара)</description>
-  <version>0.0.8</version>
+  <version>0.1.1</version>
   <priority>1000</priority>
   <has_icon>false</has_icon>
   <queries>
