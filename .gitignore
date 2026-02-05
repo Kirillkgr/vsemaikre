@@ -47,6 +47,8 @@ __screenshots__/
 /app/app/addons/*
 !/app/app/addons/branding_text/
 !/app/app/addons/branding_text/**
+!/app/app/addons/brending_wizart/
+!/app/app/addons/brending_wizart/**
 
 !/app/js/
 /app/js/*
@@ -54,6 +56,8 @@ __screenshots__/
 /app/js/addons/*
 !/app/js/addons/branding_text/
 !/app/js/addons/branding_text/**
+!/app/js/addons/brending_wizart/
+!/app/js/addons/brending_wizart/**
 
 !/app/design/
 /app/design/*
@@ -67,6 +71,17 @@ __screenshots__/
 /app/design/themes/responsive/templates/addons/*
 !/app/design/themes/responsive/templates/addons/branding_text/
 !/app/design/themes/responsive/templates/addons/branding_text/**
+!/app/design/themes/responsive/templates/addons/brending_wizart/
+!/app/design/themes/responsive/templates/addons/brending_wizart/**
+
+!/app/design/backend/
+/app/design/backend/*
+!/app/design/backend/templates/
+/app/design/backend/templates/*
+!/app/design/backend/templates/addons/
+/app/design/backend/templates/addons/*
+!/app/design/backend/templates/addons/brending_wizart/
+!/app/design/backend/templates/addons/brending_wizart/**
 
 # Ensure infra is kept
 !docker-compose.yml

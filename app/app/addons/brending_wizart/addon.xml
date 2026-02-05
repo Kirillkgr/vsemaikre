@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<addon scheme="4.0">
+    <id>brending_wizart</id>
+    <version>0.0.1</version>
+    <priority>100</priority>
+    <status>active</status>
+    <default_language>ru</default_language>
+    <auto_install>MULTIVENDOR,ULTIMATE</auto_install>
+</addon>
