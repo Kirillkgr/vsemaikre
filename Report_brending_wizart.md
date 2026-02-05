@@ -164,7 +164,6 @@
 - **Где используется**
   - `app/app/addons/brending_wizart/controllers/backend/brending_wizart.php`
   - `app/app/addons/brending_wizart/controllers/backend/index.post.php`
-  - `app/app/addons/brending_wizart/controllers/frontend/brending_wizart.php`
 
 #### `Tygh::$app['db']` (`Tygh\Database\Connection`)
 - **Что делает в CS‑Cart**
@@ -216,6 +215,8 @@
     - Получаем полный объект витрины по ID (после `findAvailableForCompanyId`).
   - `findDefault()`:
     - В мастере покупки создаём новую витрину, копируя тему/настройки из дефолтной.
+  - `findByUrl($url)`:
+    - Используем при подборе URL витрины (субдомен/хост) — проверяем, что витрина с таким URL ещё не существует.
   - `save(Storefront $storefront)`:
     - Сохраняем созданную витрину.
 - **Где используется**
@@ -361,6 +362,40 @@
 - **Где используется**
   - `app/app/addons/brending_wizart/controllers/backend/brending_wizart.php`
   - `app/app/addons/brending_wizart/controllers/backend/index.post.php`
+
+### 6.11) Enum/константы статусов и значений (используются при создании продавца и витрины)
+
+#### `Tygh\Enum\YesNo::*`
+- **Что делает в CS‑Cart**
+  - Enum для значений `Y`/`N` (вместо “магических строк”).
+- **Как используется в нашем аддоне**
+  - В `fn_update_user` устанавливаем `create_vendor_admin => YesNo::YES`.
+- **Где используется**
+  - `app/app/addons/brending_wizart/controllers/frontend/brending_wizart.php`
+
+#### `Tygh\Enum\VendorStatuses::*`
+- **Что делает в CS‑Cart**
+  - Enum статусов продавца/компании.
+- **Как используется в нашем аддоне**
+  - При создании компании ставим `status => VendorStatuses::ACTIVE`.
+- **Где используется**
+  - `app/app/addons/brending_wizart/controllers/frontend/brending_wizart.php`
+
+#### `Tygh\Enum\StorefrontStatuses::*`
+- **Что делает в CS‑Cart**
+  - Enum статусов витрин.
+- **Как используется в нашем аддоне**
+  - При создании витрины устанавливаем `status => StorefrontStatuses::OPEN`.
+- **Где используется**
+  - `app/app/addons/brending_wizart/controllers/frontend/brending_wizart.php`
+
+#### `Tygh\Enum\SiteArea::*`
+- **Что делает в CS‑Cart**
+  - Enum области сайта (Customer/Admin/Vendor panel) для функций вроде `fn_url`.
+- **Как используется в нашем аддоне**
+  - Формируем ссылки для редиректа именно в vendor panel (`SiteArea::VENDOR_PANEL`).
+- **Где используется**
+  - `app/app/addons/brending_wizart/controllers/frontend/brending_wizart.php`
 
 ## 7) Где в коде это используется (карта файлов)
 
